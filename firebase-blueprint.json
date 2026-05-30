@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "Space": {
+      "title": "Space",
+      "description": "Represents a business or project workspace owned by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique ID of the space." },
+        "name": { "type": "string", "description": "The business or project name." },
+        "logoUrl": { "type": "string", "description": "Optional business logo." },
+        "ownerId": { "type": "string", "description": "UID of the space owner." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of creation." }
+      },
+      "required": ["id", "name", "ownerId", "createdAt"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Represents a custom public testimonial request form landing page.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique ID of the campaign." },
+        "spaceId": { "type": "string", "description": "The associated space ID." },
+        "title": { "type": "string", "description": "Campaign title for internal use." },
+        "slug": { "type": "string", "description": "Unique URL-friendly slug." },
+        "status": { "type": "string", "enum": ["active", "paused"] },
+        "logoUrl": { "type": "string", "description": "Custom campaign logo." },
+        "heading": { "type": "string", "description": "Hero text of the feedback collection page." },
+        "subheading": { "type": "string", "description": "Help text explaining the product feedback." },
+        "questions": { "type": "array", "description": "Prompts to guide the client." },
+        "collectDetails": { "type": "object", "description": "Map enabling social handles, company names, titles, etc." },
+        "thankYouTitle": { "type": "string", "description": "Heading displayed after client submission." },
+        "thankYouMessage": { "type": "string", "description": "Message displayed after client submission." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "spaceId", "title", "slug", "status", "heading", "subheading", "createdAt", "updatedAt"]
+    },
+    "Testimonial": {
+      "title": "Testimonial",
+      "description": "A review or testimonial submitted by a reviewer.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string", "description": "Campaign it was submitted to." },
+        "spaceId": { "type": "string", "description": "Associated space ID." },
+        "name": { "type": "string", "description": "Submitting reviewer name." },
+        "email": { "type": "string", "description": "PII reviewer email, read restricted." },
+        "company": { "type": "string" },
+        "title": { "type": "string", "description": "Reviewer job title." },
+        "rating": { "type": "integer" },
+        "content": { "type": "string", "description": "The feedback body." },
+        "avatarUrl": { "type": "string", "description": "Reviewer profile photo." },
+        "socialUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["new", "approved", "archived"] },
+        "sentiment": { "type": "string", "description": "AI predicted sentiment." },
+        "aiSummary": { "type": "string", "description": "AI extracted core message summary statement." },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "spaceId", "name", "email", "rating", "content", "status", "createdAt"]
+    },
+    "Widget": {
+      "title": "Widget",
+      "description": "A configurable embedded social proof snippet or visual design.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "spaceId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["grid", "carousel", "single", "badge"] },
+        "theme": { "type": "string", "enum": ["light", "dark", "custom"] },
+        "campaignIds": { "type": "array", "description": "Campaign IDs from which reviews are pulled." },
+        "styles": { "type": "object" },
+        "limit": { "type": "integer" },
+        "showRating": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "spaceId", "name", "type", "theme", "campaignIds", "limit", "showRating", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/spaces/{spaceId}": {
+      "schema": { "$ref": "#/entities/Space" },
+      "description": "User Business spaces."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/Campaign" },
+      "description": "Campaign testimonial forms."
+    },
+    "/testimonials/{testimonialId}": {
+      "schema": { "$ref": "#/entities/Testimonial" },
+      "description": "Review entries."
+    },
+    "/widgets/{widgetId}": {
+      "schema": { "$ref": "#/entities/Widget" },
+      "description": "Design widgets."
+    }
+  }
+}

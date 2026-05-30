@@ -1,0 +1,11 @@
+{
+  "name": "Social Proof & Testimonial Builder",
+  "description": "A complete B2B SaaS platform that enables businesses to collect client testimonials, customize and embed responsive review widgets elements (Wall of Love, Carousel, Grid), and utilize server-side Gemini AI for review analysis, sentiment insights, and automated marketing copy generation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
