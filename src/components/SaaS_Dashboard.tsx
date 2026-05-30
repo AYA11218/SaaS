@@ -112,7 +112,14 @@ const SEED_TESTIMONIALS = [
 export default function SaaS_Dashboard() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"campaigns" | "testimonials" | "widgets" | "ai" | "integrations">("campaigns");
+  const [activeTab, setActiveTab] = useState<"campaigns" | "testimonials" | "widgets" | "ai" | "integrations" | "blueprint">("campaigns");
+
+  // Founder's Profitability Blueprint state
+  const [bpTargetMRR, setBpTargetMRR] = useState(5000);
+  const [bpMonthlyPrice, setBpMonthlyPrice] = useState(49);
+  const [bpWeeklyEmails, setBpWeeklyEmails] = useState(500);
+  const [bpConversionRate, setBpConversionRate] = useState(1.2);
+  const [bpTargetNiche, setBpTargetNiche] = useState<"dentist" | "plumber" | "salon" | "agency">("dentist");
 
   // Database lists
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -1041,66 +1048,78 @@ export default function SaaS_Dashboard() {
         <div className="lg:col-span-3 space-y-6">
           
           {/* Navigation Control Tabs Grid */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 bg-slate-200/50 backdrop-blur-md border border-slate-300/40 p-1.5 rounded-2xl">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-1.5 bg-slate-200/50 backdrop-blur-md border border-slate-300/40 p-1.5 rounded-2xl">
             
             <button
               onClick={() => setActiveTab("campaigns")}
-              className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
                 activeTab === "campaigns"
                   ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-200/40"
                   : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
               }`}
             >
-              <Layout className="w-4 h-4 text-indigo-500" />
-              <span>Collect Campaigns</span>
+              <Layout className="w-4 h-4 text-indigo-500 pt-[1px]" />
+              <span>Campaigns</span>
             </button>
 
             <button
               onClick={() => setActiveTab("testimonials")}
-              className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
                 activeTab === "testimonials"
                   ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-200/40"
                   : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
               }`}
             >
-              <MessageSquare className="w-4 h-4 text-teal-500" />
-              <span>Review Inbox</span>
+              <MessageSquare className="w-4 h-4 text-teal-500 pt-[1px]" />
+              <span>Inbox</span>
             </button>
 
             <button
               onClick={() => setActiveTab("widgets")}
-              className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
                 activeTab === "widgets"
                   ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-200/40"
                   : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
               }`}
             >
-              <Sliders className="w-4 h-4 text-emerald-500" />
-              <span>Embed Widgets</span>
+              <Sliders className="w-4 h-4 text-emerald-500 pt-[1px]" />
+              <span>Widgets</span>
             </button>
 
             <button
               onClick={() => setActiveTab("ai")}
-              className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
                 activeTab === "ai"
                   ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-200/40"
                   : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
               }`}
             >
-              <Sparkles className="w-4 h-4 text-purple-500" />
-              <span>AI Copilot</span>
+              <Sparkles className="w-4 h-4 text-purple-500 pt-[1px]" />
+              <span>AISpark</span>
             </button>
 
             <button
               onClick={() => setActiveTab("integrations")}
-              className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
                 activeTab === "integrations"
                   ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-250/30"
                   : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
               }`}
             >
-              <Settings className="w-4 h-4 text-rose-500" />
-              <span>Integrations Sync</span>
+              <Settings className="w-4 h-4 text-rose-500 pt-[1px]" />
+              <span>Pipeline Sync</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("blueprint")}
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+                activeTab === "blueprint"
+                  ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-250/30 bg-gradient-to-tr from-amber-50/50 to-amber-100/30"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
+              }`}
+            >
+              <TrendingUp className="w-4 h-4 text-amber-500 pt-[1px]" />
+              <span className="text-amber-805">Profit Blueprint</span>
             </button>
 
           </div>
@@ -2645,6 +2664,391 @@ export default function SaaS_Dashboard() {
                   </div>
                 </div>
 
+              </div>
+
+            </div>
+          )}
+
+          {activeTab === "blueprint" && (
+            <div className="space-y-6">
+              
+              {/* Dynamic Business Blueprint Header Banner */}
+              <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950 text-white p-7 rounded-3xl border border-slate-750 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase text-amber-400">
+                    🏆 Proven Profitable Model: Senja.io Clone ($85k+/mo)
+                  </div>
+                  <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                    <TrendingUp className="w-5.5 h-5.5 text-amber-400" />
+                    B2B Proof / Testimonials SaaS Syndicate
+                  </h2>
+                  <p className="text-xs text-slate-350 leading-relaxed max-w-2xl font-sans font-medium">
+                    TrustBuilder represents a high-stickiness vertical Micro-SaaS. Social proof is non-negotiable for dental clinics, plumbers, and retail checkouts. This interactive blueprint maps out your path to $5,000+/mo MRR.
+                  </p>
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800 p-4 rounded-2xl flex flex-col items-end shrink-0">
+                  <span className="text-[10px] uppercase font-black tracking-wider text-slate-400">Est. Profit Margin</span>
+                  <span className="text-2xl font-black text-emerald-400 font-mono">98.6%</span>
+                  <span className="text-[9px] text-slate-500 font-semibold font-mono mt-0.5">Minimal server overhead</span>
+                </div>
+              </div>
+
+              {/* Profitability engine components */}
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                
+                {/* 1. SaaS Parameter Controls Deck (3 columns on desktop) */}
+                <div className="lg:col-span-3 bg-white border border-slate-200/70 p-6 rounded-3xl shadow-xs space-y-6">
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                    <Sliders className="w-4.5 h-4.5 text-indigo-500 font-bold" />
+                    <h3 className="text-sm font-black text-slate-950 tracking-tight">Interactive Projection Tuner</h3>
+                  </div>
+
+                  {/* Input 1: Target MRR */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-black text-slate-705">Target Monthly Recurring Revenue (MRR)</label>
+                      <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg font-mono">
+                        ${bpTargetMRR.toLocaleString()} / mo
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1000}
+                      max={30000}
+                      step={500}
+                      value={bpTargetMRR}
+                      onChange={(e) => setBpTargetMRR(Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
+                    />
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                      <span>$1,000 / mo</span>
+                      <span>$15,000 / mo</span>
+                      <span>$30,000 / mo</span>
+                    </div>
+                  </div>
+
+                  {/* Input 2: Subscription Price Tier */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-705 block">SaaS Subscription Pricing Tier (per client)</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[19, 49, 99, 149].map((price) => (
+                        <button
+                          key={price}
+                          onClick={() => setBpMonthlyPrice(price)}
+                          className={`py-3 rounded-xl text-xs font-black tracking-wide border cursor-pointer transition-all ${
+                            bpMonthlyPrice === price
+                              ? "bg-slate-950 border-slate-950 text-white shadow-sm"
+                              : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          ${price}/mo
+                          <span className="block text-[8px] opacity-75 font-normal mt-0.5">
+                            {price === 19 ? "Starter Pack" : price === 49 ? "Growth CRM" : price === 99 ? "Pro Suite" : "Enterprise Synced"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Input 3: Weekly Outbound Cold Emails */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-black text-slate-705">Weekly Outbound Volume</label>
+                        <span className="text-[11px] font-black text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-lg font-mono">
+                          {bpWeeklyEmails} messages
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={100}
+                        max={3000}
+                        step={50}
+                        value={bpWeeklyEmails}
+                        onChange={(e) => setBpWeeklyEmails(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-amber-500 focus:outline-none"
+                      />
+                      <span className="text-[10px] font-bold text-slate-400 leading-none block">
+                        Direct outreach via cold tools (Apollo.io, mails)
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-black text-slate-705">Outbound Sign-up Rate</label>
+                        <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg font-mono">
+                          {bpConversionRate.toFixed(1)}% Conversion
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.2}
+                        max={5.0}
+                        step={0.1}
+                        value={bpConversionRate}
+                        onChange={(e) => setBpConversionRate(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none"
+                      />
+                      <span className="text-[10px] font-bold text-slate-400 leading-none block">
+                        Outbound contacts converting to active paying plans
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* 2. live Projections Card outputs (2 columns on desktop) */}
+                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl text-white flex flex-col justify-between space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Dynamic Yield Matrix</span>
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-slate-950/40 p-3.5 rounded-2xl border border-slate-800/80">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Required Active Accounts</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-white font-mono">
+                            {Math.ceil(bpTargetMRR / bpMonthlyPrice)}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-bold">clients</span>
+                        </div>
+                        <span className="text-[9px] text-slate-500 font-semibold mt-1 block">
+                          At standard pricing of ${bpMonthlyPrice}/mo
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3.5 rounded-2xl border border-slate-800/80">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Projected Signups / mo</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-amber-400 font-mono">
+                            {Math.floor(bpWeeklyEmails * 4 * (bpConversionRate / 100))}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-bold">signups</span>
+                        </div>
+                        <span className="text-[9px] text-slate-500 font-semibold mt-1 block">
+                          Based on {bpWeeklyEmails} outreach/week
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Time to target MRR */}
+                    <div className="bg-slate-950/70 p-4 rounded-2xl border border-indigo-900/30">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-300 block mb-1">Estimated Time to Target</span>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-black text-indigo-400 font-mono">
+                              {(() => {
+                                const required = Math.ceil(bpTargetMRR / bpMonthlyPrice);
+                                const monthlySignups = Math.floor(bpWeeklyEmails * 4 * (bpConversionRate / 100));
+                                if (monthlySignups === 0) return "∞";
+                                return Math.max(1, Math.ceil(required / monthlySignups));
+                              })()}
+                            </span>
+                            <span className="text-xs text-slate-400 font-bold">Months of Outbound Outreach</span>
+                          </div>
+                        </div>
+                        <div className="bg-indigo-950 text-indigo-300 text-[10px] font-black tracking-wiest uppercase py-1 px-2.5 rounded-lg border border-indigo-900/60 font-mono">
+                          High Speed
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Exit Valuation block on Acquire.com */}
+                    <div className="bg-gradient-to-br from-emerald-950/30 to-slate-900 p-4 rounded-2xl border border-emerald-900/40 space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 block">Acquisition Valuation (4x ARR Multiplier)</span>
+                      <div className="text-3xl font-black text-emerald-400 font-mono tracking-tight leading-none pt-1">
+                        ${(bpTargetMRR * 12 * 4).toLocaleString()}
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                        SaaS buyers on platforms like Acquire.com pay premium multiples of 4-6x ARR for products with recurring credit pools and locked integrations sync.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 font-mono pt-3 border-t border-slate-800 leading-relaxed text-left flex gap-1.5 items-center">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Blueprints assume ~5% churn variables and standard cloud hosting.</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Outreach Pitch Studio & Copywriter generator section */}
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+                
+                {/* Outbound templates selector tabs (2 columns) */}
+                <div className="md:col-span-2 bg-white border border-slate-200/75 rounded-3xl p-6 shadow-xs flex flex-col justify-between space-y-5">
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-black text-slate-950 flex items-center gap-1.5">
+                        <Mail className="w-4.5 h-4.5 text-amber-500" />
+                        Outbound Campaign Pitch Studio
+                      </h3>
+                      <p className="text-xs text-slate-450 mt-1 leading-relaxed font-sans">
+                        SaaS is won through distribution. Select your target market segment to generate custom cold pitch strategies optimized for conversion.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Select Market Vertical</label>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {[
+                          { id: "dentist", label: "🦷 Local Dental Clinics", description: "Target patient reviews & emergency bookings" },
+                          { id: "plumber", label: "🔧 Residential Plumbing Leads", description: "Text review requests upon job completion" },
+                          { id: "salon", label: "🌸 High-End Styling Salons", description: "Embed stylish checkout conversion gallery" },
+                          { id: "agency", label: "💼 Professional B2B Agencies", description: "Sync wins into CRM systems automatically" }
+                        ].map((niche) => (
+                          <button
+                            key={niche.id}
+                            onClick={() => setBpTargetNiche(niche.id as any)}
+                            className={`p-3 rounded-xl border flex flex-col items-start cursor-pointer text-left transition-all ${
+                              bpTargetNiche === niche.id
+                                ? "bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/20"
+                                : "bg-slate-50/50 hover:bg-slate-50 border-slate-200"
+                            }`}
+                          >
+                            <span className="text-xs font-black text-slate-900">{niche.label}</span>
+                            <span className="text-[10px] text-slate-450 font-semibold mt-0.5 leading-none">{niche.description}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50 text-[10px] text-amber-805 leading-relaxed font-semibold font-sans">
+                    💡 <strong>Founders Tip:</strong> Search 10 local directories in your zip code. Reach out directly using this pitch to sign up your first 3 trial accounts on your first weekend!
+                  </div>
+                </div>
+
+                {/* monospaced template email display (3 columns) */}
+                <div className="md:col-span-3 bg-slate-950 rounded-3xl p-6 border border-slate-900 flex flex-col justify-between space-y-4 text-white">
+                  
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-900 pb-3">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono">Email Campaign Outreach Script</span>
+                        <div className="text-xs font-bold text-slate-200">
+                          Subject: {(() => {
+                            if (bpTargetNiche === "dentist") return "Quick fix for dental search presence near me";
+                            if (bpTargetNiche === "plumber") return "Increase emergency leak bookings on auto-pilot";
+                            if (bpTargetNiche === "salon") return "Quick visual fix to increase salon bookings";
+                            return "Syndicate client wins automatically to close retainers";
+                          })()}
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => {
+                          const body = document.getElementById("bpOutreachScript")?.innerText || "";
+                          navigator.clipboard.writeText(body);
+                          const notifier = document.getElementById("bpClipboardFeedback");
+                          if (notifier) {
+                            notifier.classList.remove("opacity-0");
+                            setTimeout(() => {
+                              notifier.classList.add("opacity-0");
+                            }, 2500);
+                          }
+                        }}
+                        className="text-[10px] font-black text-amber-400 hover:text-amber-300 bg-amber-950/20 px-3.5 py-1.5 rounded-xl border border-amber-900/40 cursor-pointer flex items-center gap-1 hover:scale-[1.01] transition-transform"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copy Outreach Script
+                      </button>
+                    </div>
+
+                    {/* Interactive Copied Feedback Indicator and Template */}
+                    <div className="relative">
+                      <div 
+                        id="bpClipboardFeedback" 
+                        className="absolute top-2 right-2 bg-emerald-500 text-white px-3 py-1 text-[10px] font-black rounded-lg shadow-md flex items-center gap-1 opacity-0 transition-opacity duration-300 pointer-events-none z-10 font-sans"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Copied custom script! 🎉
+                      </div>
+
+                      <div 
+                        id="bpOutreachScript" 
+                        className="bg-black/50 text-slate-300 font-mono text-[10.5px] leading-relaxed p-4 rounded-xl border border-slate-800 min-h-60 max-h-75 overflow-y-auto text-left select-text whitespace-pre-wrap"
+                      >
+                        {(() => {
+                          const targetCampaign = campaigns[0] || { slug: "campaign", title: "Target Brand" };
+                          const targetUrl = `${window.location.origin}/form/${targetCampaign.slug}`;
+                          
+                          if (bpTargetNiche === "dentist") {
+                            return `Hey [Doctor Name],\n\nMy name is [Your Name], and I was inspecting dentist listings in our neighborhood when I came across your dental practice website.\n\nYou have amazing checkup services, but modern dental patients read verified customer reviews before scheduling are appointment. If a customer doesn't see trust signals inside of 10 seconds, they book with the clinic down the road.\n\nI built a small, specialized testimonial system called TrustBuilder designed specifically for dental practices. Your receptionist can use our beautiful lobby-tablet form to collect high-quality checkup reviews in 12 seconds.\n\nI set up a dedicated lobby campaign sandbox page for your dental clinic:\n👉 ${targetUrl}\n\nCan I send you a quick 1-minute video explaining how to link this to your Google profile and get 5+ extra high-value implants or emergency checkups next month?\n\nBest regards,\n[Your Name]\nLead Founder, TrustBuilder SaaS`;
+                          }
+                          
+                          if (bpTargetNiche === "plumber") {
+                            return `Hi [Owner Name],\n\nI saw your team's local service van in our area yesterday and decided to check your business site.\n\nYour leak-repair scores are great, but local homeowners hire residential plumbers exclusively based on immediate trust. They want to see current, star-rated feedback the moment they requests a repair quote.\n\nI run TrustBuilder, a simplified Micro-SaaS designed to let dispatch technicians text a simple 1-click review link the very second a job is finished. Approving reviews publishes them right to your site automatically.\n\nI built this test sandbox form for your plumbing brand:\n👉 ${targetUrl}\n\nCould we jump on a brief 5-minute call on Monday to activate this and boost checkout conversions by 25%?\n\nCheers,\n[Your Name]`;
+                          }
+                          
+                          if (bpTargetNiche === "salon") {
+                            return `Hello [Creative Director],\n\nI am a huge fan of your salon's custom cuts on Instagram! The styling outcomes are absolute artistry.\n\nBut here is a quick insight: over 91% of salon customers read peer styling experiences before booking a seat. Merely sharing screenshots is slow, and clients expect interactive layouts.\n\nUsing TrustBuilder, you can generate client quotes on autopilot. Approved ratings display as interactive badges right on your main booking page.\n\nCheck out the dynamic review lobby link I made for your salon:\n👉 ${targetUrl}\n\nCould I help you embed our Carousel layout on your booking page next Wednesday for free to help fill up next week's empty chairs?\n\nBest wishes,\n[Your Name]`;
+                          }
+                          
+                          // agency
+                          return `Hey [Partner Name],\n\nStandard text reviews aren't enough to close competitive high-ticket enterprise contracts anymore. B2B software buyers expect validated client outcomes synced across deal channels.\n\nI founded TrustBuilder, a streamlined testimonial engine built for developers and services models. It collects verified ratings and pushes them directly into Salesforce opportunities, HubSpot lead pipelines, or enterprise sales decks automatically.\n\nHere is your custom workspace link:\n👉 ${targetUrl}\n\nWould you be open to trying our Enterprise Sync tier for 7 days for free to automate client proof delivery in your pitch process?\n\nRegards,\n[Your Name]`;
+                        })()}
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* Step-by-step Founder Milestone Guide */}
+              <div className="bg-white border border-slate-200/70 p-6 rounded-3xl shadow-xs space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <Check className="w-5 h-5 text-emerald-500" />
+                  <h3 className="text-sm font-black text-slate-950 tracking-tight">Your 30-Day Launch Blueprint Checklist</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-1 font-sans">
+                  
+                  <div className="space-y-1.5 p-4 bg-slate-50 border border-slate-200 rounded-2xl relative text-left">
+                    <div className="absolute top-3 right-3 text-[10px] font-black text-slate-450 bg-slate-205 py-0.5 px-2 rounded-md">
+                      Days 1-5
+                    </div>
+                    <strong>1. Define Niche Focus</strong>
+                    <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                      Select 1 high-value industry (family dentists, custom home builders, or salons). Don't sell to everyone; vertical focus reduces trust friction.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 p-4 bg-slate-50 border border-slate-200 rounded-2xl relative text-left">
+                    <div className="absolute top-3 right-3 text-[10px] font-black text-slate-450 bg-slate-205 py-0.5 px-2 rounded-md">
+                      Days 6-15
+                    </div>
+                    <strong>2. Seed Sandbox Campaigns</strong>
+                    <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                      Launch 2 test campaigns inside our TrustBuilder platform. Configure tailored questionnaire templates (E-commerce storefronts or CRM).
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 p-4 bg-slate-50 border border-slate-200 rounded-2xl relative text-left">
+                    <div className="absolute top-3 right-3 text-[10px] font-black text-slate-450 bg-slate-205 py-0.5 px-2 rounded-md">
+                      Days 16-25
+                    </div>
+                    <strong>3. Send Cold Outreach</strong>
+                    <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                      Find 50 local directory leads. Send our copy-optimized outbound scripts. Offer a free 14-day setup session to secure early beta users.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 p-4 bg-amber-50/40 border border-amber-200 rounded-2xl relative text-left">
+                    <div className="absolute top-3 right-3 text-[10px] font-black text-amber-600 bg-amber-100 py-0.5 px-2 rounded-md">
+                      Days 26-30
+                    </div>
+                    <strong>4. Lock Billing & Scale</strong>
+                    <p className="text-[11px] text-slate-600 font-semibold leading-relaxed font-sans">
+                      Connect your Stripe account, close your first 3 paid accounts at $49/mo, and list on Acquire.com once you reach structural profitability!
+                    </p>
+                  </div>
+
+                </div>
               </div>
 
             </div>
