@@ -4,6 +4,16 @@ export interface Space {
   logoUrl?: string;
   ownerId: string;
   createdAt: any; // Timestamp or date string
+  billingPlan?: "Free Tier" | "Growth CRM ($49/mo)" | "Pro Suite ($99/mo)" | "Enterprise Sync ($149/mo)";
+  paymentMethod?: {
+    type: "none" | "card" | "mobile_money";
+    cardName?: string;
+    cardLast4?: string;
+    momoProvider?: string;
+    momoPhoneNumber?: string;
+    momoAccountName?: string;
+    status?: "active" | "pending_otp" | "unverified";
+  };
 }
 
 export interface Campaign {

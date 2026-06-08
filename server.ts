@@ -31,6 +31,78 @@ function getGeminiClient(): GoogleGenAI {
   return aiInstance;
 }
 
+// In-memory ledger to cache sent custom email notifications for admin simulation oversight
+const sentEmails: any[] = [];
+
+app.get("/api/emails", (req, res) => {
+  res.json({ emails: sentEmails });
+});
+
+app.post("/api/notify-owner", async (req, res) => {
+  try {
+    const { testimonial, spaceName, ownerEmail } = req.body;
+    if (!testimonial) {
+      return res.status(400).json({ error: "Missing testimonial data in body." });
+    }
+
+    const emailSubject = `🎉 New Customer Testimonial Submitted for ${spaceName || "your workspace"}!`;
+    const ratingStars = "★".repeat(Number(testimonial.rating) || 5) + "☆".repeat(5 - (Number(testimonial.rating) || 5));
+    
+    const emailBody = `
+Dear Business Owner,
+
+A new customer review has been successfully submitted via your campaign form!
+
+Review details:
+--------------------------------------------------
+Customer Name: ${testimonial.name}
+Email Address: ${testimonial.email}
+Rating:        ${ratingStars} (${testimonial.rating}/5 stars)
+Company/Title: ${testimonial.title || ""}${testimonial.title && testimonial.company ? " @ " : ""}${testimonial.company || "N/A"}
+Date Created:  ${testimonial.createdAt || new Date().toISOString()}
+
+Content:
+"${testimonial.content}"
+--------------------------------------------------
+
+To review, approve, tag, or display this feedback on your live Wall of Love widgets, log in to your SaaS dashboard:
+http://localhost:3000
+
+Best Regards,
+ACME Review Platform Notifications Service
+    `.trim();
+
+    const emailPayload = {
+      id: "email-" + Math.random().toString(36).slice(2, 9),
+      to: ownerEmail || "ayanatamene80@gmail.com",
+      subject: emailSubject,
+      body: emailBody,
+      sentAt: new Date().toISOString(),
+      testimonialName: testimonial.name,
+      testimonialEmail: testimonial.email,
+      rating: testimonial.rating
+    };
+
+    sentEmails.push(emailPayload);
+
+    console.log("\n=======================================================");
+    console.log(`📠 [OUTGOING SMTP ROUTER] Dispatching automated notification...`);
+    console.log(`📬 To:      ${emailPayload.to}`);
+    console.log(`📌 Subject: ${emailPayload.subject}`);
+    console.log(`✉️  Body:\n\n${emailPayload.body}`);
+    console.log("=======================================================\n");
+
+    res.json({
+      success: true,
+      message: "Notification logged and simulated email dispatched successfully via custom carrier.",
+      email: emailPayload
+    });
+  } catch (error: any) {
+    console.error("Email notification proxy failed:", error);
+    res.status(500).json({ error: error.message || "Failed to dispatch email helper." });
+  }
+});
+
 // B2B SaaS AI Service: Sentiment summary & multi-platform copywriting assets from real customer feed.
 app.post("/api/gemini/analyze", async (req, res) => {
   try {

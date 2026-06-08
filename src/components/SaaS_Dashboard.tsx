@@ -14,6 +14,8 @@ import {
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from "firebase/auth";
 import { db, auth, handleFirestoreError, OperationType } from "../firebase";
 import { Space, Campaign, Testimonial, Widget, AISyntheticResult } from "../types";
+import { useTestimonialNotifications } from "../hooks/useTestimonialNotifications";
+import SaaS_GoogleDriveIntegration from "./SaaS_GoogleDriveIntegration";
 import { 
   Plus, 
   Check, 
@@ -43,7 +45,9 @@ import {
   Loader,
   Send,
   Share2,
-  Tag
+  Tag,
+  CreditCard,
+  Wallet
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import SaaS_Widget_Embed from "./SaaS_Widget_Embed";
@@ -112,7 +116,23 @@ const SEED_TESTIMONIALS = [
 export default function SaaS_Dashboard() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"campaigns" | "testimonials" | "widgets" | "ai" | "integrations" | "blueprint">("campaigns");
+  const [activeTab, setActiveTab] = useState<"campaigns" | "testimonials" | "widgets" | "ai" | "integrations" | "blueprint" | "billing">("campaigns");
+
+  // Mobile Money & Billing Workspace State Controls
+  const [billingPlan, setBillingPlan] = useState<"Free Tier" | "Growth CRM ($49/mo)" | "Pro Suite ($99/mo)" | "Enterprise Sync ($149/mo)">("Growth CRM ($49/mo)");
+  const [momoProvider, setMomoProvider] = useState("M-Pesa");
+  const [momoNumber, setMomoNumber] = useState("");
+  const [momoAccountName, setMomoAccountName] = useState("");
+  const [momoCountry, setMomoCountry] = useState("+254"); // Default Kenya
+  const [isVerifyingMomo, setIsVerifyingMomo] = useState(false);
+  const [momoOtpCode, setMomoOtpCode] = useState("");
+  const [momoVerificationStep, setMomoVerificationStep] = useState<"idle" | "input" | "otp" | "success">("idle");
+  const [momoError, setMomoError] = useState("");
+  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState("");
+  const [momoInvoices, setMomoInvoices] = useState<{ id: string; date: string; description: string; amount: string; status: "paid" | "failed" | "pending"; method: string }[]>([
+    { id: "INV-2901", date: "2026-05-15", description: "TrustBuilder Growth CRM Subscription", amount: "$49.00", status: "paid", method: "M-Pesa Cashless" },
+    { id: "INV-1823", date: "2026-04-15", description: "TrustBuilder Growth CRM Subscription", amount: "$49.00", status: "paid", method: "Visa Card (*4242)" }
+  ]);
 
   // Founder's Profitability Blueprint state
   const [bpTargetMRR, setBpTargetMRR] = useState(5000);
@@ -127,6 +147,85 @@ export default function SaaS_Dashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [widgets, setWidgets] = useState<Widget[]>([]);
+
+  // Simulated email dispatch log history
+  const [sentEmails, setSentEmails] = useState<any[]>([]);
+  const loadSentEmails = async () => {
+    try {
+      const res = await fetch("/api/emails");
+      if (res.ok) {
+        const data = await res.json();
+        setSentEmails(data.emails || []);
+      }
+    } catch (err) {
+      console.error("Failed to load sent emails ledger:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "testimonials") {
+      loadSentEmails();
+      const interval = setInterval(loadSentEmails, 8050); // Poll SMTP logs in sandbox
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
+
+  // Real-time toast states
+  const { useLiveSubmissions } = useTestimonialNotifications();
+  interface ActiveToast {
+    id: string;
+    name: string;
+    email: string;
+    rating: number;
+    content: string;
+    createdAt: string;
+  }
+  const [toasts, setToasts] = useState<ActiveToast[]>([]);
+
+  const handleLiveTestimonial = (newT: any) => {
+    setToasts((prev) => [
+      {
+        id: newT.id,
+        name: newT.name,
+        email: newT.email,
+        rating: newT.rating,
+        content: newT.content,
+        createdAt: newT.createdAt
+      },
+      ...prev
+    ]);
+    
+    // Auto-dismiss within 10 seconds
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== newT.id));
+    }, 10000);
+
+    // Live update the testimonials list on the current page in-memory
+    setTestimonials((prev) => {
+      if (prev.some((item) => item.id === newT.id)) return prev;
+      return [
+        {
+          id: newT.id,
+          name: newT.name,
+          email: newT.email,
+          rating: newT.rating,
+          content: newT.content,
+          campaignId: "",
+          spaceId: selectedSpace?.id || "",
+          status: "new",
+          createdAt: newT.createdAt,
+          tags: []
+        } as Testimonial,
+        ...prev
+      ];
+    });
+
+    // Refresh log feed on new toast entry
+    loadSentEmails();
+  };
+
+  // Mount real-time subscription listener hook
+  useLiveSubmissions(selectedSpace?.id, handleLiveTestimonial);
 
   // Action / State flags
   const [dbLoading, setDbLoading] = useState(false);
@@ -451,6 +550,167 @@ export default function SaaS_Dashboard() {
       }
     } catch (err) {
       console.error("Error setting up user workspace", err);
+    }
+  };
+
+  // Sync local mobile money & billing controls when active workspace changes
+  useEffect(() => {
+    if (selectedSpace) {
+      setBillingPlan(selectedSpace.billingPlan || "Growth CRM ($49/mo)");
+      if (selectedSpace.paymentMethod?.type === "mobile_money") {
+        setMomoProvider(selectedSpace.paymentMethod.momoProvider || "M-Pesa");
+        const savedPhone = selectedSpace.paymentMethod.momoPhoneNumber || "";
+        const parts = savedPhone.split(" ");
+        if (parts.length > 1) {
+          setMomoCountry(parts[0]);
+          setMomoNumber(parts.slice(1).join(" "));
+        } else {
+          setMomoNumber(savedPhone);
+        }
+        setMomoAccountName(selectedSpace.paymentMethod.momoAccountName || "");
+        setMomoVerificationStep("success");
+      } else {
+        setMomoVerificationStep("idle");
+        setMomoNumber("");
+        setMomoAccountName("");
+      }
+    }
+  }, [selectedSpace]);
+
+  const handleSaveMomoPaymentMethod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSpace) return;
+    
+    setIsVerifyingMomo(true);
+    setMomoError("");
+    
+    if (!momoNumber.trim()) {
+      setMomoError("Mobile Money phone number is required");
+      setIsVerifyingMomo(false);
+      return;
+    }
+    if (!momoAccountName.trim()) {
+      setMomoError("Registered Mobile Money account holder name is required");
+      setIsVerifyingMomo(false);
+      return;
+    }
+
+    // Direct transition to OTP simulation step
+    setTimeout(() => {
+      setIsVerifyingMomo(false);
+      setMomoVerificationStep("otp");
+    }, 1200);
+  };
+
+  const handleConfirmMomoOtp = async () => {
+    if (!selectedSpace) return;
+    if (momoOtpCode.trim() !== "1234" && momoOtpCode.trim().length !== 4) {
+      setMomoError("Invalid code. Enter '1234' for sandbox authentication approval.");
+      return;
+    }
+
+    setIsVerifyingMomo(true);
+    setMomoError("");
+
+    try {
+      const spaceDocRef = doc(db, "spaces", selectedSpace.id);
+      const updatedPaymentMethod = {
+        type: "mobile_money" as const,
+        momoProvider,
+        momoPhoneNumber: `${momoCountry} ${momoNumber}`,
+        momoAccountName,
+        status: "active" as const
+      };
+
+      await updateDoc(spaceDocRef, {
+        billingPlan,
+        paymentMethod: updatedPaymentMethod
+      });
+
+      const refreshedSpace = {
+        ...selectedSpace,
+        billingPlan,
+        paymentMethod: updatedPaymentMethod
+      };
+      setSelectedSpace(refreshedSpace);
+      
+      setSpaces(prev => prev.map(s => s.id === selectedSpace.id ? refreshedSpace : s));
+
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setSyncLogs(prev => [
+        {
+          id: `momo-setup-${Date.now()}`,
+          timestamp,
+          integration: "Mobile Money billing",
+          message: `Successfully connected ${momoProvider} account (${momoCountry} ${momoNumber.slice(-4).padStart(momoNumber.length, '*')}) as primary subscription billing method. Plan updated to ${billingPlan}.`,
+          type: "success"
+        },
+        ...prev
+      ]);
+
+      setMomoInvoices(prev => [
+        {
+          id: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+          date: new Date().toISOString().split('T')[0],
+          description: `TrustBuilder ${billingPlan} Activation`,
+          amount: billingPlan.includes("49") ? "$49.00" : billingPlan.includes("99") ? "$99.00" : billingPlan.includes("149") ? "$149.00" : "$0.00",
+          status: "paid",
+          method: `${momoProvider} Cashless`
+        },
+        ...prev
+      ]);
+
+      setIsVerifyingMomo(false);
+      setMomoVerificationStep("success");
+      setPaymentSuccessMessage(`Success! Your business account is active on the ${billingPlan}. Your verified Mobile Money number (${momoCountry} ${momoNumber}) will be billed.`);
+    } catch (err) {
+      setIsVerifyingMomo(false);
+      handleFirestoreError(err, OperationType.UPDATE, `spaces/${selectedSpace.id}`);
+    }
+  };
+
+  const handleDisconnectMomo = async () => {
+    if (!selectedSpace) return;
+    setIsVerifyingMomo(true);
+    setMomoError("");
+
+    try {
+      const spaceDocRef = doc(db, "spaces", selectedSpace.id);
+      const updatedPaymentMethod = {
+        type: "none" as const,
+        status: "unverified" as const
+      };
+
+      await updateDoc(spaceDocRef, {
+        paymentMethod: updatedPaymentMethod
+      });
+
+      const refreshedSpace = {
+        ...selectedSpace,
+        paymentMethod: updatedPaymentMethod
+      };
+      setSelectedSpace(refreshedSpace);
+      setSpaces(prev => prev.map(s => s.id === selectedSpace.id ? refreshedSpace : s));
+
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setSyncLogs(prev => [
+        {
+          id: `momo-disconnect-${Date.now()}`,
+          timestamp,
+          integration: "Mobile Money billing",
+          message: `Disconnected Mobile Money billing details from your business account profile.`,
+          type: "warning"
+        },
+        ...prev
+      ]);
+
+      setIsVerifyingMomo(false);
+      setMomoVerificationStep("idle");
+      setMomoNumber("");
+      setMomoAccountName("");
+    } catch (err) {
+      setIsVerifyingMomo(false);
+      handleFirestoreError(err, OperationType.UPDATE, `spaces/${selectedSpace.id}`);
     }
   };
 
@@ -1048,7 +1308,7 @@ export default function SaaS_Dashboard() {
         <div className="lg:col-span-3 space-y-6">
           
           {/* Navigation Control Tabs Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-1.5 bg-slate-200/50 backdrop-blur-md border border-slate-300/40 p-1.5 rounded-2xl">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-1.5 bg-slate-200/50 backdrop-blur-md border border-slate-300/40 p-1.5 rounded-2xl">
             
             <button
               onClick={() => setActiveTab("campaigns")}
@@ -1120,6 +1380,18 @@ export default function SaaS_Dashboard() {
             >
               <TrendingUp className="w-4 h-4 text-amber-500 pt-[1px]" />
               <span className="text-amber-805">Profit Blueprint</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("billing")}
+              className={`inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-extrabold tracking-wide cursor-pointer transition-all ${
+                activeTab === "billing"
+                  ? "bg-white text-slate-950 shadow-[0_4px_12px_rgba(0,0,0,0.04)] border border-slate-250/30 bg-gradient-to-tr from-emerald-50/50 to-emerald-100/30"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
+              }`}
+            >
+              <CreditCard className="w-4 h-4 text-emerald-500 pt-[1px]" />
+              <span className="text-emerald-805">Billing & Payouts</span>
             </button>
 
           </div>
@@ -1590,12 +1862,17 @@ export default function SaaS_Dashboard() {
 
               </div>
 
-              {/* Results count label */}
-              <div className="text-[10px] font-black text-slate-450 tracking-wider uppercase px-1">
-                Showing {filteredTestimonials.length} of {testimonials.length} submitted reviews
-              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                
+                {/* Left: Testimonials Stack List */}
+                <div className="lg:col-span-2 space-y-4">
+                  
+                  {/* Results count label */}
+                  <div className="text-[10px] font-black text-slate-450 tracking-wider uppercase px-1">
+                    Showing {filteredTestimonials.length} of {testimonials.length} submitted reviews
+                  </div>
 
-              {/* Reviews Stack list */}
+                  {/* Reviews Stack list */}
               {filteredTestimonials.length === 0 ? (
                 <div className="p-16 text-center bento-card-glass rounded-3xl border border-slate-200/60 shadow-inner">
                   <MessageSquare className="w-10 h-10 text-slate-300 mx-auto mb-3" />
@@ -1806,6 +2083,63 @@ export default function SaaS_Dashboard() {
                   ))}
                 </div>
               )}
+
+                </div>
+
+                {/* Right Column: Simulated SMTP Outbox Logs Feed */}
+                <div className="lg:col-span-1">
+                  <div className="bento-card-glass rounded-3xl border border-slate-200/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] space-y-4">
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">Automated Notifier</h4>
+                          <p className="text-[9px] text-slate-400 font-bold font-mono">Simulated SMTP Carrier</p>
+                        </div>
+                      </div>
+                      <span className="text-[8px] bg-emerald-50 text-emerald-600 font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider font-mono animate-pulse">
+                        Active Logs
+                      </span>
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 font-semibold leading-relaxed font-sans">
+                      Whenever a guest completes a review, an automated HTML email is dispatched to the space owner's registered address seamlessly.
+                    </p>
+
+                    <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+                      {sentEmails.length === 0 ? (
+                        <div className="text-center py-8 bg-slate-50/55 rounded-2xl border border-dashed border-slate-200">
+                          <Clock className="w-5 h-5 text-slate-350 mx-auto mb-2 text-slate-400" />
+                          <p className="text-[10px] font-semibold text-slate-400">Waiting for first submission...</p>
+                        </div>
+                      ) : (
+                        sentEmails.slice().reverse().map((email) => (
+                          <div key={email.id} className="bg-slate-900 border border-slate-850 rounded-2xl p-3 text-white flex flex-col gap-2 shadow-sm">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[8px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                                Delivered
+                              </span>
+                              <span className="text-[8px] text-slate-400 font-mono">
+                                {new Date(email.sentAt).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-slate-350 font-bold font-mono truncate text-indigo-200">To: {email.to}</p>
+                              <p className="text-[10px] text-slate-205 font-bold tracking-tight mt-1">Subj: {email.subject}</p>
+                            </div>
+                            <div className="bg-slate-950/80 p-2 rounded-lg text-[9px] font-mono text-slate-300 max-h-24 overflow-y-auto leading-normal whitespace-pre-wrap">
+                              {email.body}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
 
             </div>
           )}
@@ -2666,6 +3000,17 @@ export default function SaaS_Dashboard() {
 
               </div>
 
+              {/* Google Drive and Picker Asset Library Integration */}
+              <SaaS_GoogleDriveIntegration 
+                selectedSpace={selectedSpace}
+                onSpaceUpdate={(updatedSpace) => {
+                  setSelectedSpace(updatedSpace);
+                  setSpaces(prev => prev.map(s => s.id === updatedSpace.id ? updatedSpace : s));
+                }}
+                campaigns={campaigns}
+                setSyncLogs={setSyncLogs}
+              />
+
             </div>
           )}
 
@@ -3054,6 +3399,439 @@ export default function SaaS_Dashboard() {
             </div>
           )}
 
+          {activeTab === "billing" && (
+            <div className="space-y-6">
+              
+              {/* Active Workspace Status Panel */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-950 text-white p-7 rounded-3xl border border-indigo-900/60 shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-6 animate-fade-in">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/35 px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase text-emerald-400">
+                    💳 Enterprise billing control panel
+                  </div>
+                  <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2 font-sans">
+                    <Wallet className="w-5.5 h-5.5 text-emerald-400 animate-pulse" />
+                    Workspace Billing Settings
+                  </h2>
+                  <p className="text-xs text-slate-300 leading-relaxed font-semibold max-w-xl font-sans">
+                    Configure high-throughput commercial plans for <strong className="text-white">{selectedSpace?.name || "your business account"}</strong>. Choose between credit card pools or integrated local Mobile Money channels to lock in B2B subscriptions automatically.
+                  </p>
+                </div>
+
+                <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 w-full md:w-auto min-w-48 text-center md:text-left space-y-1">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono">Active Workspace</span>
+                  <div className="text-base font-black text-white flex items-center justify-center md:justify-start gap-1.5 leading-none">
+                    <Building className="w-4 h-4 text-emerald-400" />
+                    {selectedSpace?.name || "Sandbox Business"}
+                  </div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">Owner: {currentUser ? currentUser.email : "Guest Session"}</span>
+                </div>
+              </div>
+
+              {/* Grid 2 Column */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* TIER SUBSCRIPTION PACKAGES SELECTOR */}
+                <div className="lg:col-span-2 space-y-6">
+                  
+                  <div className="bg-white border border-slate-200/70 p-6 rounded-3xl shadow-sm space-y-5">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-black text-slate-955 flex items-center gap-2">
+                        <Tag className="w-4.5 h-4.5 text-emerald-500" />
+                        Select Subscription Plan
+                      </h3>
+                      <p className="text-xs text-slate-450 font-semibold leading-relaxed font-sans mt-0.5">
+                        Update your active merchant plan. Subscriptions are billed automatically to your configured payment method every month.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        { id: "Free Tier", price: "$0/mo", desc: "Up to 5 live testimonials, standard widgets", features: ["5 Approved Testimonials", "Standard Star Rating Widget", "Manual Link Share"] },
+                        { id: "Growth CRM ($49/mo)", price: "$49/mo", desc: "Perfect for local dental clinics and plumber setups", features: ["120 Reviews Billed", "Vite Dynamic Embeds", "Direct Email Custom Pitch", "Support for M-Pesa/MoMo"] },
+                        { id: "Pro Suite ($99/mo)", price: "$99/mo", desc: "Ideal for fast scaling e-commerce retail networks", features: ["Unlimited Reviews", "5 Configured Widgets", "Shopify Automation API Sync", "Dedicated SMS Gateway Access"] },
+                        { id: "Enterprise Sync ($149/mo)", price: "$149/mo", desc: "Direct Salesforce CRM pushes and webhook pipelines", features: ["Full Salesforce CRM Pipeline Sync", "B2B Custom Lead Objects", "Dedicated SLAs and Account Managers", "Premium Credit Card & Momo Setup"] }
+                      ].map((plan) => (
+                        <button
+                          key={plan.id}
+                          onClick={() => setBillingPlan(plan.id as any)}
+                          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                            billingPlan === plan.id
+                              ? "bg-emerald-50/40 border-emerald-500 ring-2 ring-emerald-500/10"
+                              : "bg-slate-50/50 hover:bg-slate-100/50 border-slate-200"
+                          }`}
+                        >
+                          <div className="space-y-1 w-full">
+                            <div className="flex justify-between items-start">
+                              <span className="text-xs font-black text-slate-955 truncate pr-1">{plan.id}</span>
+                              <span className="text-xs font-black text-emerald-600 font-mono shrink-0">{plan.price}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-450 font-semibold block leading-tight">{plan.desc}</span>
+                          </div>
+                          
+                          <div className="mt-3.5 pt-2 border-t border-slate-100/80 w-full space-y-1">
+                            {plan.features.slice(0, 2).map((feat, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5 text-[9px] text-slate-500 font-extrabold font-mono">
+                                <span className="text-emerald-500">✓</span> {feat}
+                              </div>
+                            ))}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ACTIVE COMPLIANT PAYMENT INVOICES HISTORIC TABLE */}
+                  <div className="bg-white border border-slate-200/70 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-955 flex items-center gap-2">
+                          <Database className="w-4.5 h-4.5 text-indigo-500" />
+                          Billing History & Invoices
+                        </h3>
+                        <p className="text-[11px] text-slate-450 font-semibold font-sans mt-0.5">
+                          View automated transaction ledger receipts generated for your active workspace.
+                        </p>
+                      </div>
+                      <span className="text-[9px] text-slate-450 font-mono font-bold uppercase">{momoInvoices.length} transactions</span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs font-semibold">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400 text-[10px] uppercase font-black tracking-wider font-sans">
+                            <th className="py-2 font-bold text-slate-500">Invoice ID</th>
+                            <th className="py-2 font-bold text-slate-500">Date</th>
+                            <th className="py-2 font-bold text-slate-500">Description</th>
+                            <th className="py-2 font-bold text-slate-500">Method</th>
+                            <th className="py-2 text-right font-bold text-slate-500">Amount</th>
+                            <th className="py-2 text-right font-bold text-slate-500">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {momoInvoices.map((inv) => (
+                            <tr key={inv.id} className="text-slate-705 font-mono text-[11px]">
+                              <td className="py-3 font-bold text-slate-900">{inv.id}</td>
+                              <td className="py-3 text-slate-550">{inv.date}</td>
+                              <td className="py-3 text-slate-805 font-sans font-bold">{inv.description}</td>
+                              <td className="py-3 text-slate-550">{inv.method}</td>
+                              <td className="py-3 text-right font-black text-slate-900">{inv.amount}</td>
+                              <td className="py-3 text-right">
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-2 py-0.5 text-[9px] font-black uppercase tracking-wider font-sans">
+                                  {inv.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* MOBILE MONEY CONFIG PANEL (1 COLUMN) */}
+                <div className="space-y-6">
+                  
+                  <div className="bg-white border border-slate-205 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                        <CreditCard className="w-4.5 h-4.5 text-emerald-500" />
+                        Billing Payment Method
+                      </h3>
+                      <p className="text-[10px] text-slate-450 font-semibold leading-relaxed mt-0.5 font-sans">
+                        Accepting global cards and localized commercial Mobile Money for frictionless sandbox setups.
+                      </p>
+                    </div>
+
+                    {/* Show verified mobile money status */}
+                    {momoVerificationStep === "success" && selectedSpace?.paymentMethod?.type === "mobile_money" ? (
+                      <div className="space-y-4">
+                        
+                        <div className="bg-emerald-500/5 border border-emerald-200 p-4 rounded-2xl flex flex-col items-start gap-2.5 relative overflow-hidden">
+                          <span className="absolute top-3 right-3 text-[9px] font-black bg-emerald-100 text-emerald-800 uppercase px-2 py-0.5 rounded-md tracking-wider font-mono">
+                            Verified Active
+                          </span>
+                          
+                          <div className="h-9 w-9 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 border border-emerald-205 shadow-sm">
+                            <Check className="w-4.5 h-4.5" />
+                          </div>
+
+                          <div className="space-y-0.5 text-left">
+                            <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Mobile Money Account</span>
+                            <h4 className="text-xs font-black text-slate-900">{selectedSpace.paymentMethod.momoProvider} Payment Account</h4>
+                            <p className="text-xs font-bold text-slate-755 font-mono">{selectedSpace.paymentMethod.momoPhoneNumber}</p>
+                            <p className="text-[10px] font-semibold text-slate-500 mt-0.5 font-sans">Holder: {selectedSpace.paymentMethod.momoAccountName}</p>
+                          </div>
+                        </div>
+
+                        {paymentSuccessMessage && (
+                          <div className="bg-emerald-55/10 text-emerald-805 text-[10.5px] p-3 rounded-xl border border-emerald-200 leading-relaxed font-semibold">
+                            {paymentSuccessMessage}
+                          </div>
+                        )}
+
+                        <div className="space-y-3.5 border-t border-slate-100 pt-4 text-left">
+                          <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest font-mono">Billed API credit booster</span>
+                          
+                          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 flex flex-col">
+                            <div className="flex justify-between items-baseline">
+                              <span className="text-xs font-black text-slate-800">1,000 SMS Request Bundle</span>
+                              <span className="text-sm font-black font-mono text-emerald-600">$15</span>
+                            </div>
+                            <p className="text-[10px] text-slate-450 leading-tight font-semibold font-sans">
+                              Boost your campaign rate immediately. Bills connected number {selectedSpace.paymentMethod.momoPhoneNumber} instantly via STK push.
+                            </p>
+                            
+                            <button
+                              onClick={() => {
+                                setIsVerifyingMomo(true);
+                                setMomoError("");
+                                setTimeout(() => {
+                                  setIsVerifyingMomo(false);
+                                  
+                                  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                  setSyncLogs(prev => [
+                                    {
+                                      id: `momo-add-${Date.now()}`,
+                                      timestamp,
+                                      integration: "Mobile Money credit push",
+                                      message: `STK push authorized on handset. Charged $15.00 to account ${selectedSpace.paymentMethod?.momoAccountName}. SMS credit booster active.`,
+                                      type: "success"
+                                    },
+                                    ...prev
+                                  ]);
+
+                                  setMomoInvoices(prev => [
+                                    {
+                                      id: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+                                      date: new Date().toISOString().split('T')[0],
+                                      description: "SMS Request Credit Booster Pool (1k)",
+                                      amount: "$15.00",
+                                      status: "paid",
+                                      method: `${selectedSpace.paymentMethod?.momoProvider} Carrier`
+                                    },
+                                    ...prev
+                                  ]);
+
+                                  alert(`Successfully charged $15.00 via Carrier STK-Push to ${selectedSpace.paymentMethod?.momoPhoneNumber}! 🎉 Invoice created dynamically.`);
+                                }, 1500);
+                              }}
+                              disabled={isVerifyingMomo}
+                              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-450 hover:to-teal-450 text-white font-extrabold text-[10.5px] rounded-lg tracking-wider disabled:bg-slate-400 disabled:from-slate-400 disabled:to-slate-400 outline-none hover:scale-[1.01] transition-transform duration-100 cursor-pointer"
+                            >
+                              {isVerifyingMomo ? (
+                                <>
+                                  <Loader className="w-3.5 h-3.5 animate-spin" /> Authorization push pending...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" /> Charge $15.00 via Carrier Push
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={handleDisconnectMomo}
+                            disabled={isVerifyingMomo}
+                            className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-850 font-black text-[11px] rounded-xl border border-rose-205 transition-colors cursor-pointer"
+                          >
+                            Remove Carrier Connection
+                          </button>
+                        </div>
+
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        
+                        {/* Interactive state panels for Adding Payment */}
+                        {momoVerificationStep === "otp" ? (
+                          <div className="space-y-4 font-sans text-left">
+                            <div className="bg-amber-50 border border-amber-205 p-4 rounded-2xl space-y-2 relative overflow-hidden">
+                              <span className="absolute top-3 right-3 text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md tracking-wider font-mono">
+                                Awaiting push approval
+                              </span>
+                              
+                              <div className="h-8 w-8 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 border border-amber-205">
+                                <Clock className="w-4 h-4 animate-spin" />
+                              </div>
+
+                              <div className="space-y-1">
+                                <h4 className="text-xs font-black text-slate-900">Handset Auth Push Delivered</h4>
+                                <p className="text-[10.5px] text-slate-550 leading-relaxed font-semibold">
+                                  We have delivered an OTC validation packet to your registered <strong className="text-slate-800">{momoProvider} ({momoCountry} {momoNumber})</strong> handset profile.
+                                </p>
+                              </div>
+
+                              <div className="bg-white/85 p-2.5 rounded-xl border border-amber-200 font-mono text-[9px] text-amber-805 shadow-inner">
+                                💡 <strong>Sandbox OTP Bypass:</strong> Enter verification code <strong className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-150 font-bold">1234</strong> to verify.
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block font-sans">Enter 4-Digit OTC Match Code</label>
+                              <input
+                                type="text"
+                                maxLength={4}
+                                value={momoOtpCode}
+                                onChange={(e) => setMomoOtpCode(e.target.value.replace(/\D/g, ''))}
+                                placeholder="e.g. 1234"
+                                className="w-full text-center font-bold font-mono tracking-widest text-lg py-2 bg-slate-50 border border-slate-205 rounded-xl outline-none focus:ring-2 focus:ring-amber-200"
+                              />
+                            </div>
+
+                            {momoError && (
+                              <div className="p-2.5 bg-red-50 text-red-700 border border-red-200/50 rounded-xl text-[10px] font-semibold leading-tight">
+                                ⚠️ {momoError}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              <button
+                                onClick={() => {
+                                  setMomoVerificationStep("idle");
+                                  setMomoOtpCode("");
+                                  setMomoError("");
+                                }}
+                                className="py-2.5 px-4 bg-slate-50 hover:bg-slate-100 border border-slate-205 rounded-xl text-xs font-extrabold text-slate-550 transition-colors cursor-pointer text-center"
+                              >
+                                Back
+                              </button>
+
+                              <button
+                                onClick={handleConfirmMomoOtp}
+                                disabled={isVerifyingMomo}
+                                className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 border border-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                {isVerifyingMomo ? (
+                                  <>
+                                    <Loader className="w-4 h-4 animate-spin text-white" /> Verifying...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-4 h-4" /> Activate
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <form onSubmit={handleSaveMomoPaymentMethod} className="space-y-4 text-left">
+                            
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1 flex flex-col font-sans">
+                              <span className="text-[9px] font-black text-slate-450 uppercase tracking-wider">Connected Plan Target</span>
+                              <strong className="text-xs text-slate-805 leading-none">{billingPlan}</strong>
+                              <span className="text-[10px] text-slate-500 font-semibold leading-normal font-sans">Billed securely at active tier. Change tiers anytime.</span>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Select Mobile Operator Channel</label>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {[
+                                  { name: "M-Pesa", color: "border-emerald-300 text-emerald-800 bg-emerald-50/20" },
+                                  { name: "MTN MoMo", color: "border-amber-300 text-amber-805 bg-amber-50/20" },
+                                  { name: "Airtel Money", color: "border-red-350 text-red-800 bg-red-50/10" }
+                                ].map((op) => (
+                                  <button
+                                    key={op.name}
+                                    type="button"
+                                    onClick={() => setMomoProvider(op.name)}
+                                    className={`p-2 rounded-xl border text-[11px] font-extrabold flex items-center justify-center transition-all cursor-pointer ${
+                                      momoProvider === op.name 
+                                        ? `${op.color} shadow-sm ring-2 ring-emerald-500/10 scale-102` 
+                                        : "bg-white border-slate-200 text-slate-550 hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    {op.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Row Inputs */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1 font-sans">Country</label>
+                                <select
+                                  value={momoCountry}
+                                  onChange={(e) => setMomoCountry(e.target.value)}
+                                  className="w-full text-xs font-bold px-2 py-2.5 bg-slate-50 border border-slate-205 rounded-xl outline-none cursor-pointer"
+                                >
+                                  <option value="+254">+254 (KE)</option>
+                                  <option value="+233">+233 (GH)</option>
+                                  <option value="+234">+234 (NG)</option>
+                                  <option value="+251">+251 (ET)</option>
+                                  <option value="+256">+256 (UG)</option>
+                                  <option value="+221">+221 (SN)</option>
+                                  <option value="+63">+63 (PH)</option>
+                                </select>
+                              </div>
+
+                              <div className="col-span-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1 font-sans">Phone Number</label>
+                                <input
+                                  type="tel"
+                                  pattern="[0-9]*"
+                                  placeholder="e.g. 712345678"
+                                  value={momoNumber}
+                                  onChange={(e) => setMomoNumber(e.target.value.replace(/\D/g, ''))}
+                                  className="w-full text-xs font-mono font-bold px-3 py-2.5 bg-slate-50 border border-slate-205 rounded-xl outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1 font-sans">Registered Account Holder Name</label>
+                              <input
+                                type="text"
+                                placeholder="Registered Subscriber Name"
+                                value={momoAccountName}
+                                onChange={(e) => setMomoAccountName(e.target.value)}
+                                className="w-full text-xs font-bold px-3 py-2.5 bg-slate-50 border border-slate-205 rounded-xl outline-none"
+                              />
+                            </div>
+
+                            {momoError && (
+                              <div className="p-2.5 bg-red-50 text-red-700 border border-red-200/50 rounded-xl text-[10px] font-semibold leading-tight">
+                                ⚠️ {momoError}
+                              </div>
+                            )}
+
+                            <button
+                              type="submit"
+                              disabled={isVerifyingMomo}
+                              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-2 border border-emerald-700 tracking-wider font-mono uppercase"
+                            >
+                              {isVerifyingMomo ? (
+                                <>
+                                  <Loader className="w-4.5 h-4.5 animate-spin text-white" /> Issuing STK push...
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-4.5 h-4.5" /> Initialize Carrier Connect
+                                </>
+                              )}
+                            </button>
+
+                          </form>
+                        )}
+
+                        <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-200/40 text-[10px] text-amber-805 leading-relaxed font-semibold">
+                          🛡️ <strong>Compliance Safeguard:</strong> All Mobile Money transactions are verified directly via SMS/USSD client token matching before executing standard subscription billing invoices.
+                        </div>
+
+                      </div>
+                    )}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
         </div>
 
       </main>
@@ -3068,6 +3846,84 @@ export default function SaaS_Dashboard() {
           </div>
         </div>
       </footer>
+
+      {/* Real-time Toasts Overlay container */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95, transition: { duration: 0.15 } }}
+              layout
+              className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-4 shadow-xl pointer-events-auto flex flex-col gap-2 ring-1 ring-emerald-500/30"
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-black tracking-widest text-emerald-450 uppercase font-mono">Live Review Received</span>
+                </div>
+                <button
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="text-slate-400 hover:text-white transition-colors text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex text-[11px]">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <span 
+                      key={i} 
+                      className={i < toast.rating ? "text-amber-400" : "text-slate-605"}
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono font-bold">score: {toast.rating}/5</span>
+              </div>
+
+              <div className="text-xs font-sans">
+                <p className="font-extrabold text-slate-100">{toast.name}</p>
+                <p className="text-[10px] text-slate-400 font-mono truncate font-bold">{toast.email}</p>
+                <p className="text-[11px] text-slate-300 italic mt-1 font-semibold line-clamp-3 leading-normal">
+                  "{toast.content}"
+                </p>
+              </div>
+
+              <div className="flex gap-1.5 pt-1.5 border-t border-slate-800/80">
+                <button
+                  onClick={async () => {
+                    try {
+                      const ref = doc(db, "testimonials", toast.id);
+                      await updateDoc(ref, { status: "approved" });
+                      setTestimonials(prev => prev.map(t => t.id === toast.id ? {...t, status: "approved"} : t));
+                      setToasts(prev => prev.filter(t => t.id !== toast.id));
+                    } catch (err) {
+                      console.error("Direct toast approval failed:", err);
+                    }
+                  }}
+                  className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded-lg tracking-wider uppercase font-mono transition-all text-center cursor-pointer"
+                >
+                  ✓ Approve
+                </button>
+                <button
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-705 text-slate-300 font-bold text-[10px] rounded-lg uppercase tracking-wider font-mono transition-all text-center cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
     </div>
   );

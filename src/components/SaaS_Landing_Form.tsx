@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import { Campaign, Testimonial } from "../types";
+import { useTestimonialNotifications } from "../hooks/useTestimonialNotifications";
 import { 
   Star, 
   Send, 
@@ -40,6 +41,7 @@ const PRESET_AVATARS = [
 ];
 
 export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps) {
+  const { notifyNewSubmission } = useTestimonialNotifications();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -135,6 +137,10 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
       try {
         await addDoc(collection(db, "testimonials"), testimonialPayload);
         setSuccess(true);
+        // Trigger notification hook to contact owner (email dispatch)
+        notifyNewSubmission(testimonialPayload, campaign.spaceId).catch((notifyErr) => {
+          console.error("Non-blocking notification error:", notifyErr);
+        });
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, "testimonials");
       }
