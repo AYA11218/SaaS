@@ -38,5 +38,10 @@ service cloud.firestore {
     match /widgets/{widgetId} {
       allow read, write: if true;
     }
+
+    // Rules for User Security Two-Factor Authentication metadata
+    match /user_security/{securityId} {
+      allow read, write: if true;
+    }
   }
 }

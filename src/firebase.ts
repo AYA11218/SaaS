@@ -1,12 +1,14 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
 
-// CRITICAL: Initialize Firestore with the multi-database ID
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+// CRITICAL: Initialize Firestore with the multi-database ID and enable long-polling to prevent connection timeouts/failures
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth();
 
 export enum OperationType {

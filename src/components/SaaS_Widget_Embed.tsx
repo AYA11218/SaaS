@@ -221,9 +221,20 @@ export default function SaaS_Widget_Embed({ widgetId }: SaaSWidgetEmbedProps) {
                   </div>
                 )}
                 {/* Content */}
-                <p className="text-sm font-medium leading-relaxed opacity-90 mb-5 relative z-10">
+                <p className="text-sm font-medium leading-relaxed opacity-90 mb-3 relative z-10">
                   "{t.content}"
                 </p>
+
+                {t.videoUrl && (
+                  <div className="mt-2 mb-4 rounded-xl overflow-hidden bg-slate-950 border border-slate-200/20 dark:border-slate-800/50 aspect-video relative">
+                    <video 
+                      src={t.videoUrl} 
+                      controls 
+                      className="w-full h-full object-cover"
+                      preload="none"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Author Footer */}
@@ -293,6 +304,16 @@ export default function SaaS_Widget_Embed({ widgetId }: SaaSWidgetEmbedProps) {
                   <p className="text-base font-medium italic opacity-95 leading-relaxed mb-6">
                     "{currentTestimonial.content}"
                   </p>
+                  {currentTestimonial.videoUrl && (
+                    <div className="mt-2 mb-4 rounded-xl overflow-hidden bg-slate-950 border border-slate-200/20 dark:border-slate-800/50 aspect-video relative max-w-sm mx-auto">
+                      <video 
+                        src={currentTestimonial.videoUrl} 
+                        controls 
+                        className="w-full h-full object-cover"
+                        preload="none"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-3 items-center border-t border-gray-100/10 dark:border-slate-800/20 pt-4">
@@ -368,6 +389,16 @@ export default function SaaS_Widget_Embed({ widgetId }: SaaSWidgetEmbedProps) {
               <blockquote className="text-lg font-medium leading-relaxed opacity-95 text-slate-800 dark:text-slate-100 italic mb-6">
                 "{quote.content}"
               </blockquote>
+              {quote.videoUrl && (
+                <div className="mt-2 mb-4 rounded-xl overflow-hidden bg-slate-950 border border-slate-200/20 dark:border-slate-800/50 aspect-video relative max-w-md mx-auto">
+                  <video 
+                    src={quote.videoUrl} 
+                    controls 
+                    className="w-full h-full object-cover"
+                    preload="none"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3.5 items-center border-t border-gray-100/10 dark:border-slate-800/20 pt-4">

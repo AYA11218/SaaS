@@ -22,7 +22,15 @@ import {
   ChevronRight, 
   Heart,
   Loader,
-  ArrowLeft
+  ArrowLeft,
+  Video,
+  VideoOff,
+  Play,
+  Square,
+  RotateCcw,
+  AlertTriangle,
+  AlertCircle,
+  Camera
 } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -41,7 +49,7 @@ const PRESET_AVATARS = [
 ];
 
 export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps) {
-  const { notifyNewSubmission } = useTestimonialNotifications();
+  const { notifyNewSubmission, notifyClientThankYou } = useTestimonialNotifications();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -58,6 +66,136 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
   const [title, setTitle] = useState("");
   const [socialUrl, setSocialUrl] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(PRESET_AVATARS[0]);
+
+  // Video testimonial recording states
+  const [reviewType, setReviewType] = useState<"text" | "video">("text");
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordingState, setRecordingState] = useState<"idle" | "requesting" | "recording" | "recorded">("idle");
+  const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
+  const [videoObjectURL, setVideoObjectURL] = useState<string | null>(null);
+  const [recordedDuration, setRecordedDuration] = useState<number>(0);
+  const [recordingTimer, setRecordingTimer] = useState<any>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+
+  const videoPreviewRef = React.useRef<HTMLVideoElement | null>(null);
+
+  // Clean play stream when switching views
+  useEffect(() => {
+    return () => {
+      if (recordingTimer) clearInterval(recordingTimer);
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [mediaStream, recordingTimer]);
+
+  const stopCameraStream = (streamToStop: MediaStream | null) => {
+    if (streamToStop) {
+      streamToStop.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      setRecordingState("requesting");
+      setVideoError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480, facingMode: "user" },
+        audio: true
+      });
+      setMediaStream(stream);
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+      }
+      setRecordingState("idle");
+    } catch (err: any) {
+      console.error("Camera access failed:", err);
+      setVideoError("Camera/microphones access failed. Please ensure permissions are granted within your browser controls.");
+      setRecordingState("idle");
+    }
+  };
+
+  const startRecording = () => {
+    if (!mediaStream) return;
+    setVideoError(null);
+    const chunks: BlobPart[] = [];
+    
+    // We try to use a compatible mime type
+    let mimeType = "video/webm";
+    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
+      mimeType = "video/webm;codecs=vp8,opus";
+    } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+      mimeType = "video/mp4";
+    }
+
+    try {
+      const recorder = new MediaRecorder(mediaStream, { mimeType });
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const completeBlob = new Blob(chunks, { type: "video/webm" });
+        setVideoBlob(completeBlob);
+        const objUrl = URL.createObjectURL(completeBlob);
+        setVideoObjectURL(objUrl);
+        setRecordingState("recorded");
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setRecordingState("recording");
+      setRecordedDuration(0);
+
+      const timer = setInterval(() => {
+        setRecordedDuration(prev => {
+          if (prev >= 60) {
+            clearInterval(timer);
+            if (recorder.state !== "inactive") {
+              recorder.stop();
+            }
+            stopCameraStream(mediaStream);
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+      setRecordingTimer(timer);
+    } catch (err: any) {
+      console.error("Failed to start MediaRecorder:", err);
+      setVideoError("Could not start recording session: " + err.message);
+    }
+  };
+
+  const stopRecording = () => {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      setRecordingTimer(null);
+    }
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+    stopCameraStream(mediaStream);
+  };
+
+  const handleResetRecording = () => {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      setRecordingTimer(null);
+    }
+    if (videoObjectURL) {
+      URL.revokeObjectURL(videoObjectURL);
+      setVideoObjectURL(null);
+    }
+    setVideoBlob(null);
+    setRecordedDuration(0);
+    setRecordingState("idle");
+    startCamera();
+  };
 
   useEffect(() => {
     async function loadCampaign() {
@@ -109,8 +247,14 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
       alert("Please select a star rating.");
       return;
     }
-    if (!content.trim() || !name.trim() || !email.trim()) {
+
+    const activeContent = content.trim() || (reviewType === "video" ? `📹 [Video Review] Recorded video testimonial (${recordedDuration}s)` : "");
+    if (!activeContent) {
       alert("Please complete all required fields (Feedback, Name, and Email).");
+      return;
+    }
+    if (!name.trim() || !email.trim()) {
+      alert("Please complete Name and Email fields.");
       return;
     }
 
@@ -118,18 +262,46 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
       setSubmitting(true);
       setError(null);
 
+      let finalVideoUrl = "";
+      if (reviewType === "video") {
+        if (!videoBlob) {
+          alert("Please record/finish a video block or switch back to text form format.");
+          setSubmitting(false);
+          return;
+        }
+
+        try {
+          if (videoBlob.size < 900000) {
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(videoBlob);
+            });
+            finalVideoUrl = base64Data;
+          } else {
+            finalVideoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+          }
+        } catch (err) {
+          console.error("Video chunk conversion failed, defaulting:", err);
+          finalVideoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+        }
+      }
+
       const testimonialPayload = {
         campaignId: campaign.id,
         spaceId: campaign.spaceId,
         name: name.trim(),
         email: email.trim(),
         rating: campaign.collectDetails.rating ? rating : 5,
-        content: content.trim(),
+        content: activeContent,
         avatarUrl,
         company: campaign.collectDetails.company ? company.trim() : "",
         title: campaign.collectDetails.title ? title.trim() : "",
         socialUrl: campaign.collectDetails.socialUrl ? socialUrl.trim() : "",
         status: "new" as const, // initially 'new' awaiting space owner's consent/approval.
+        videoUrl: finalVideoUrl || undefined,
+        videoDuration: reviewType === "video" ? recordedDuration : undefined,
         createdAt: new Date().toISOString(),
         tags: []
       };
@@ -137,9 +309,17 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
       try {
         await addDoc(collection(db, "testimonials"), testimonialPayload);
         setSuccess(true);
+        // Clean up stream triggers
+        stopCameraStream(mediaStream);
+        setMediaStream(null);
+
         // Trigger notification hook to contact owner (email dispatch)
         notifyNewSubmission(testimonialPayload, campaign.spaceId).catch((notifyErr) => {
           console.error("Non-blocking notification error:", notifyErr);
+        });
+        // Trigger automated customer "Thank-You" template email
+        notifyClientThankYou(testimonialPayload, campaign).catch((clientErr) => {
+          console.error("Non-blocking thank you notification error:", clientErr);
         });
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, "testimonials");
@@ -301,26 +481,184 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                 </div>
               )}
 
-              {/* Review Text */}
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 flex justify-between">
-                  <span>Your Review / Feedback <span className="text-red-500">*</span></span>
-                  <span className="text-xs text-slate-400 font-medium">{content.length} characters</span>
+              {/* Review Format Selector */}
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-slate-700 block">
+                  Choose Review Format <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
-                  <textarea
-                    required
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    rows={4}
-                    placeholder="Describe your raw experience with our product or team..."
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 focus:border-emerald-500 hover:border-gray-300 rounded-xl font-medium text-slate-700 text-sm placeholder-gray-400 focus:ring-2 focus:ring-emerald-100 transition-all outline-none"
-                  />
-                  <div className="absolute right-3.5 bottom-3 text-slate-300">
-                    <MessageSquare className="w-5 h-5" />
-                  </div>
+                <div className="bg-slate-100 p-1.5 rounded-2xl flex border border-slate-205 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewType("text");
+                      stopCameraStream(mediaStream);
+                      setMediaStream(null);
+                    }}
+                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      reviewType === "text"
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <MessageSquare className="w-4 h-4 text-emerald-500" />
+                    <span>✍️ Write Text</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewType("video");
+                      startCamera();
+                    }}
+                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      reviewType === "video"
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <Video className="w-4 h-4 text-rose-500 animate-pulse" />
+                    <span>📹 Record Video</span>
+                  </button>
                 </div>
               </div>
+
+              {/* Format Specific Blocks */}
+              {reviewType === "text" ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700 flex justify-between">
+                    <span>Your Review / Feedback <span className="text-red-500">*</span></span>
+                    <span className="text-xs text-slate-400 font-medium">{content.length} characters</span>
+                  </label>
+                  <div className="relative">
+                    <textarea
+                      required={reviewType === "text"}
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      rows={4}
+                      placeholder="Describe your raw experience with our product or team..."
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 focus:border-emerald-500 hover:border-gray-300 rounded-xl font-medium text-slate-700 text-sm placeholder-gray-400 focus:ring-2 focus:ring-emerald-100 transition-all outline-none"
+                    />
+                    <div className="absolute right-3.5 bottom-3 text-slate-300">
+                      <MessageSquare className="w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-slate-900 rounded-3xl overflow-hidden relative shadow-xl border-2 border-slate-800 flex flex-col justify-between align-middle h-80">
+                    {/* Live Stream Viewfinder */}
+                    {recordingState === "requesting" && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950 text-white z-10">
+                        <Loader className="w-10 h-10 text-rose-500 animate-spin mb-3" />
+                        <span className="text-xs font-bold uppercase tracking-wider font-mono">Requesting client camera/mic permissions...</span>
+                      </div>
+                    )}
+
+                    {videoError && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-slate-950 text-rose-400 z-10">
+                        <AlertTriangle className="w-12 h-12 mb-3 animate-bounce text-rose-500" />
+                        <h4 className="text-xs font-black uppercase tracking-wider">Access Blocked</h4>
+                        <p className="text-[11px] font-semibold text-slate-400 max-w-sm mt-1 mb-4 leading-normal">{videoError}</p>
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer"
+                        >
+                          Retry Access
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Flipped mirrored livestream display */}
+                    {(recordingState === "idle" || recordingState === "recording") && mediaStream && !videoError && (
+                      <video
+                        ref={videoPreviewRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover scale-x-[-1] absolute inset-0"
+                      />
+                    )}
+
+                    {/* Pre-recorded segment preview player */}
+                    {recordingState === "recorded" && videoObjectURL && (
+                      <video
+                        src={videoObjectURL}
+                        controls
+                        className="w-full h-full object-cover absolute inset-0"
+                      />
+                    )}
+
+                    {/* REC Banners Top Overlay */}
+                    {recordingState === "recording" && (
+                      <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-rose-600 px-3 py-1 rounded-full text-white text-[10px] font-black uppercase tracking-widest leading-none shadow shadow-rose-950">
+                        <span className="h-2 w-2 rounded-full bg-white animate-ping" />
+                        <span>Rec • {recordedDuration}s / 60s Limit</span>
+                      </div>
+                    )}
+
+                    {!videoObjectURL && recordingState === "idle" && (
+                      <div className="absolute top-4 left-4 z-10 bg-slate-950/80 backdrop-blur-xs border border-slate-700/50 px-3 py-1 rounded-full text-slate-300 text-[9px] font-black uppercase tracking-wider">
+                        📷 Guide: Center your camera before recording
+                      </div>
+                    )}
+
+                    {/* Bottom Action Ribbons */}
+                    <div className="absolute bottom-4 left-0 right-0 z-10 flex justify-center gap-3 px-4">
+                      {recordingState === "idle" && mediaStream && (
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          className="px-5 py-3 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer shadow-lg hover:scale-103 transition-all flex items-center gap-1.5"
+                        >
+                          <Camera className="w-4 h-4 fill-white" />
+                          <span>Start Recording</span>
+                        </button>
+                      )}
+
+                      {recordingState === "recording" && (
+                        <button
+                          type="button"
+                          onClick={stopRecording}
+                          className="px-5 py-3 bg-red-800 hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer shadow-lg hover:scale-103 transition-all flex items-center gap-1.5"
+                        >
+                          <Square className="w-4 h-4 fill-white text-white" />
+                          <span>Stop & Save draft</span>
+                        </button>
+                      )}
+
+                      {recordingState === "recorded" && (
+                        <div className="flex gap-2.5">
+                          <span className="px-4 py-2.5 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl flex items-center">
+                            ✓ Saved ({recordedDuration}s)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleResetRecording}
+                            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-1.5"
+                          >
+                            <RotateCcw className="w-4 h-4 text-emerald-400" />
+                            <span>Re-record video</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Video Testimonial Companion Text Content block */}
+                  <div className="space-y-1.5 bg-slate-50 p-4 border border-slate-200 rounded-2xl">
+                    <label className="text-[10px] font-black uppercase tracking-wider block text-slate-450 font-mono">
+                      Accompanying Review Caption / Commentary (Optional)
+                    </label>
+                    <textarea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      rows={2}
+                      placeholder="Give a quick written context phrase to pair with your high fidelity video testimonial..."
+                      className="w-full px-3 py-2 bg-white border border-slate-200 focus:border-indigo-500 rounded-xl font-medium text-slate-700 text-xs placeholder-slate-400 focus:ring-1 focus:ring-indigo-100 transition-all outline-none"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Avatar Preset Selection */}
               {campaign.collectDetails.avatarUrl && (

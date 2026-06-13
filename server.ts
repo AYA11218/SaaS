@@ -38,6 +38,90 @@ app.get("/api/emails", (req, res) => {
   res.json({ emails: sentEmails });
 });
 
+// Helper to replace dynamic placeholders in Thank You email templates
+function replacePlaceholders(template: string, testimonial: any, campaign: any): string {
+  if (!template) return "";
+  const ratingStars = "★".repeat(Number(testimonial.rating) || 5) + "☆".repeat(5 - (Number(testimonial.rating) || 5));
+  return template
+    .replace(/\{name\}/g, testimonial.name || "Customer")
+    .replace(/\{rating\}/g, `${testimonial.rating || 5}/5 stars (${ratingStars})`)
+    .replace(/\{campaign_title\}/g, campaign.title || "Collection Campaign")
+    .replace(/\{company\}/g, testimonial.company || "N/A")
+    .replace(/\{content\}/g, testimonial.content || "")
+    .replace(/\{sender\}/g, campaign.thankYouEmailSender || "The Corporate Team");
+}
+
+app.post("/api/notify-client", (req, res) => {
+  try {
+    const { testimonial, campaign } = req.body;
+    if (!testimonial || !campaign) {
+      return res.status(400).json({ error: "Missing testimonial or campaign config in body." });
+    }
+
+    // Check if the thank you email is enabled
+    const isEnabled = campaign.thankYouEmailEnabled !== false; // Enable by default if not set
+    if (!isEnabled) {
+      return res.json({
+        success: false,
+        message: "Automated Thank You email is currently deactivated for this campaign."
+      });
+    }
+
+    const defaultSubject = `Thank you for sharing your experience with us, {name}!`;
+    const defaultBody = `
+Dear {name},
+
+Thank you so much for leaving a rating of {rating} on {campaign_title}! We really appreciate you taking your time to share your feedback with us:
+
+"{content}"
+
+Your review has been successfully submitted and helps us build a better experience for everyone.
+
+Best regards,
+{sender}
+    `.trim();
+
+    const rawSubject = campaign.thankYouEmailSubject || defaultSubject;
+    const rawBody = campaign.thankYouEmailBody || defaultBody;
+
+    const formattedSubject = replacePlaceholders(rawSubject, testimonial, campaign);
+    const formattedBody = replacePlaceholders(rawBody, testimonial, campaign);
+    const senderName = campaign.thankYouEmailSender || "The Corporate Team";
+
+    const emailPayload = {
+      id: "client-thank-email-" + Math.random().toString(36).slice(2, 9),
+      to: testimonial.email || "recipient@sandbox.io",
+      from: `"${senderName}" <reviews@trustbuilder-automated.io>`,
+      subject: formattedSubject,
+      body: formattedBody,
+      sentAt: new Date().toISOString(),
+      testimonialName: testimonial.name,
+      testimonialEmail: testimonial.email,
+      rating: testimonial.rating,
+      isClientReply: true
+    };
+
+    sentEmails.push(emailPayload);
+
+    console.log("\n=======================================================");
+    console.log(`📠 [OUTGOING CLIENT AUTO-REPLY] dispatching Thank-You template...`);
+    console.log(`📬 To:      ${emailPayload.to}`);
+    console.log(`✉️  From:    ${emailPayload.from}`);
+    console.log(`📌 Subject: ${emailPayload.subject}`);
+    console.log(`✉️  Body:\n\n${emailPayload.body}`);
+    console.log("=======================================================\n");
+
+    res.json({
+      success: true,
+      message: "Client automated thank-you email registered and simulated.",
+      email: emailPayload
+    });
+  } catch (error: any) {
+    console.error("Client email dispatch mock failed:", error);
+    res.status(500).json({ error: error.message || "Failed to process auto email." });
+  }
+});
+
 app.post("/api/notify-owner", async (req, res) => {
   try {
     const { testimonial, spaceName, ownerEmail } = req.body;
@@ -193,6 +277,246 @@ Produce a complete JSON object adhering to this schema:
   } catch (error: any) {
     console.error("Gemini API server proxy failed:", error);
     res.status(500).json({ error: error.message || "Internal server error performing AI synthesis." });
+  }
+});
+
+// Single review B2B Copywriting: Generate professional social media marketing copy based on review content
+app.post("/api/gemini/generate-social-copy", async (req, res) => {
+  try {
+    const { testimonial, companyName, tone } = req.body;
+    if (!testimonial || !testimonial.content) {
+      return res.status(400).json({ error: "Missing testimonial content to generate copy from." });
+    }
+
+    const aiClient = getGeminiClient();
+    const activeTone = tone || "Professional";
+    const brand = companyName || "our business";
+    
+    const reviewerName = testimonial.name || "A Customer";
+    const reviewerDesignation = (testimonial.title || testimonial.company)
+      ? `(${testimonial.title || ""}${testimonial.title && testimonial.company ? " @ " : ""}${testimonial.company || ""})`
+      : "";
+    const ratingValue = testimonial.rating ? `${testimonial.rating}/5 stars` : "5/5 stars";
+
+    const promptText = `
+You are an elite B2B and consumer copywriting strategist. Generate three distinct, high-performance social media marketing pieces (LinkedIn, Twitter/X, Instagram) promoting "${brand}" based on a real customer review.
+
+Review Details:
+- Customer Name: ${reviewerName} ${reviewerDesignation}
+- Rating scoring: ${ratingValue}
+- Feedback text: "${testimonial.content}"
+
+The overall copy style and tone must be: "${activeTone}" (e.g. if professional, keep it polished and data-focused; if enthusiastic, make it high-energy with emojis; if punchy/bold, make it short, direct, and outcome-focused).
+
+Output a complete JSON object matching this exact schema:
+{
+  "valueHook": "A compelling, high-impact introductory statement summarizing the customer's transformation or main benefit (1 sentence).",
+  "linkedin": "A high-performance professional LinkedIn post. Structure: attention-grabbing hook, the concrete quote/story from the review, takeaways of what makes ${brand} special, call-to-action (CTA), and 3-4 professional hashtags. Make it feel authentic, not overly robotic.",
+  "twitter": "A highly viral, punchy Twitter/X post under 280 characters. Inline emojis, a crisp value-proposition statement, a short review snippet, and 2-3 minimal hashtags.",
+  "instagram": "An elegant, visually evocative post suited for Instagram or Facebook. Include an eye-catching header, bold callouts, the core highlight quote from ${reviewerName}, a friendly call-to-action, and optimized hashtags."
+}
+    `.trim();
+
+    const generateResponse = await aiClient.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: promptText,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            valueHook: { type: Type.STRING },
+            linkedin: { type: Type.STRING },
+            twitter: { type: Type.STRING },
+            instagram: { type: Type.STRING }
+          },
+          required: ["valueHook", "linkedin", "twitter", "instagram"]
+        }
+      }
+    });
+
+    const outputText = generateResponse.text;
+    if (!outputText) {
+      throw new Error("No output received from the Gemini AI model.");
+    }
+
+    const socialPayload = JSON.parse(outputText);
+    res.json({
+      success: true,
+      tone: activeTone,
+      payload: socialPayload
+    });
+  } catch (error: any) {
+    console.error("Gemini social media copy generation proxy failed:", error);
+    res.status(500).json({ error: error.message || "Failed to generate social copy from review." });
+  }
+});
+
+// Custom raw review rewriter API endpoint
+app.post("/api/gemini/rewrite-review", async (req, res) => {
+  try {
+    const { rawReview, companyName, tone, format } = req.body;
+    if (!rawReview || typeof rawReview !== "string" || !rawReview.trim()) {
+      return res.status(400).json({ error: "Missing or invalid rawReview content to rewrite." });
+    }
+
+    const aiClient = getGeminiClient();
+    const activeTone = tone || "Professional";
+    const brand = companyName || "our business";
+    const reqFormat = format || "both";
+
+    const promptText = `
+You are an expert copywriter and marketing strategist specializing in social proof.
+Your task is to take a raw, messy, or informal customer review for "${brand}" and rewrite it into professional-grade marketing copy and social captions.
+
+Raw review content:
+"${rawReview}"
+
+Desired Tone: "${activeTone}"
+Format requested: "${reqFormat}"
+
+Please generate:
+1. "polishedReview": A clean, grammatically pristine, and highly readable version of the testimonial itself. Keep the core customer voice and main feedback message, but elevate the sentence structure and expression.
+2. "marketingHeadline": A crisp, benefit-driven headliner (less than 10 words) that captures the core value mentioned in the review.
+3. "linkedinCaption": An engaging, professional, thought-leadership style LinkedIn post detailing client success using ${brand}.
+4. "twitterCaption": A punchy, high-engagement Twitter/X post under 250 characters with emojis.
+5. "instagramCaption": A gorgeous Instagram/Facebook caption with spaces, bulleted benefits if applicable, and relevant hashtags.
+
+Output a complete JSON object adhering to this exact schema:
+{
+  "polishedReview": "The cleanly rewritten customer testimonial",
+  "marketingHeadline": "A benefit-driven landing page headline",
+  "linkedinCaption": "The formatted LinkedIn post (or empty string if format is 'social_caption' only)",
+  "twitterCaption": "The formatted Twitter/X post (or empty string if format is 'marketing_copy' only)",
+  "instagramCaption": "The formatted Instagram/Facebook post"
+}
+    `.trim();
+
+    const generateResponse = await aiClient.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: promptText,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            polishedReview: { type: Type.STRING },
+            marketingHeadline: { type: Type.STRING },
+            linkedinCaption: { type: Type.STRING },
+            twitterCaption: { type: Type.STRING },
+            instagramCaption: { type: Type.STRING }
+          },
+          required: ["polishedReview", "marketingHeadline", "linkedinCaption", "twitterCaption", "instagramCaption"]
+        }
+      }
+    });
+
+    const outputText = generateResponse.text;
+    if (!outputText) {
+      throw new Error("No output received from the Gemini AI model.");
+    }
+
+    const parsed = JSON.parse(outputText);
+    res.json({
+      success: true,
+      payload: parsed
+    });
+  } catch (error: any) {
+    console.error("Gemini rewrite review error:", error);
+    res.status(500).json({ error: error.message || "Failed to rewrite raw review." });
+  }
+});
+
+// Testimonial Sentiment trend analysis over time
+app.post("/api/gemini/sentiment-trend", async (req, res) => {
+  try {
+    const { testimonials } = req.body;
+    if (!testimonials || !Array.isArray(testimonials)) {
+      return res.status(400).json({ error: "Testimonials must be provided in an array." });
+    }
+
+    if (testimonials.length === 0) {
+      return res.json({ success: true, trendData: [] });
+    }
+
+    const aiClient = getGeminiClient();
+
+    // Simplify records to avoid token bloat while transferring essential text context
+    const reviewsToAnalyze = testimonials.map((t) => ({
+      id: t.id,
+      content: t.content || "",
+      rating: t.rating || 5,
+      createdAt: t.createdAt || new Date().toISOString()
+    }));
+
+    const promptText = `
+Analyze the underlying customer sentiment polarity/force for each testimonial item.
+For each testimonial detail:
+1. Provide a sentiment label: "Positive", "Neutral", or "Negative"
+2. Output a numerical sentiment score ranging from -1.00 (extremely critical/detrimental) to +1.00 (extremely satisfied/delighted). For example:
+   - A bright 5-star appraisal or glowing compliment usually scores between 0.70 and 1.00.
+   - Constructive, mixed, or passive 3-to-4 star feedback usually scores between 0.10 and 0.50.
+   - Plain matter-of-fact or average statements score around 0.00.
+   - Poor/dissatisfied 1-to-2 star complaints score below -0.30.
+3. Keep the original 'id' mapping intact so they correspond 1:1 on the dashboard layout.
+4. Provide a very short reason for your mathematical score.
+
+Testimonials context:
+${JSON.stringify(reviewsToAnalyze, null, 2)}
+
+Produce a valid, parsable JSON response matching this schema:
+{
+  "analyzedTestimonials": [
+    {
+      "id": "string (the original feedback ID)",
+      "sentiment": "Positive" | "Neutral" | "Negative",
+      "score": number, // float between -1.00 and 1.00
+      "reason": "String (brief 1-sentence analytical reason)"
+    }
+  ]
+}
+`.trim();
+
+    const generateResponse = await aiClient.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: promptText,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            analyzedTestimonials: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  sentiment: { type: Type.STRING },
+                  score: { type: Type.NUMBER },
+                  reason: { type: Type.STRING }
+                },
+                required: ["id", "sentiment", "score", "reason"]
+              }
+            }
+          },
+          required: ["analyzedTestimonials"]
+        }
+      }
+    });
+
+    const outputText = generateResponse.text;
+    if (!outputText) {
+      throw new Error("No output received from the Gemini AI model.");
+    }
+
+    const payload = JSON.parse(outputText);
+    res.json({
+      success: true,
+      trendData: payload.analyzedTestimonials
+    });
+  } catch (error: any) {
+    console.error("Gemini sentiment trend analyzer failed:", error);
+    res.status(500).json({ error: error.message || "Failed to process testimonials sentiment trend." });
   }
 });
 

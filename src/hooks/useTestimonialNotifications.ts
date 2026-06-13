@@ -63,6 +63,38 @@ export function useTestimonialNotifications() {
   };
 
   /**
+   * Triggers the server-side email helper to log/simulatively dispatch
+   * an automated "Thank You" email notification to the client.
+   */
+  const notifyClientThankYou = async (testimonial: any, campaign: any) => {
+    try {
+      if (!testimonial || !campaign) return null;
+
+      const response = await fetch("/api/notify-client", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          testimonial,
+          campaign,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to dispatch client thank you email payload to server.");
+      }
+
+      const data = await response.json();
+      console.log("[Notification System] Client thank-you email dispatch success:", data);
+      return data;
+    } catch (error) {
+      console.error("[Notification System] Error triggering client thank-you notification:", error);
+      return null;
+    }
+  };
+
+  /**
    * Sets up a real-time Firestore listener for newly added testimonials
    * in the active workspace. Useful for pushing real-time UI Toasts.
    */
@@ -133,6 +165,7 @@ export function useTestimonialNotifications() {
 
   return {
     notifyNewSubmission,
+    notifyClientThankYou,
     useLiveSubmissions,
   };
 }

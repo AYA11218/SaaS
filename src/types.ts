@@ -37,6 +37,13 @@ export interface Campaign {
   thankYouMessage: string;
   createdAt: any;
   updatedAt: any;
+  thankYouEmailEnabled?: boolean;
+  thankYouEmailSubject?: string;
+  thankYouEmailBody?: string;
+  thankYouEmailSender?: string;
+  customDomain?: string;
+  customDomainStatus?: "pending" | "dns_propagation" | "active";
+  dnsRecordValue?: string;
 }
 
 export interface Testimonial {
@@ -55,6 +62,8 @@ export interface Testimonial {
   sentiment?: "Positive" | "Neutral" | "Negative";
   aiSummary?: string;
   tags?: string[];
+  videoUrl?: string;
+  videoDuration?: number;
   createdAt: any;
 }
 
@@ -92,3 +101,14 @@ export interface AISyntheticResult {
     facebookAd: string;
   };
 }
+
+export interface UserSecurityConfig {
+  userId: string;
+  twoFactorEnabled: boolean;
+  twoFactorType: "app" | "email" | "sms";
+  totpSecret?: string;
+  emailAddress?: string;
+  phoneNumber?: string;
+  backupCodes: string[];
+}
+
