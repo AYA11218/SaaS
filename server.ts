@@ -352,6 +352,139 @@ Output a complete JSON object matching this exact schema:
   }
 });
 
+// Multi-review copywriting: Generate persuasive social media posts and website marketing copy based on multiple customer reviews and their sentiment
+app.post("/api/gemini/generate-multi-campaign", async (req, res) => {
+  try {
+    const { testimonials, companyName, tone } = req.body;
+    if (!testimonials || !Array.isArray(testimonials) || testimonials.length === 0) {
+      return res.status(400).json({ error: "Missing or invalid testimonials array." });
+    }
+
+    const aiClient = getGeminiClient();
+    const activeTone = tone || "Persuasive";
+    const brand = companyName || "our business";
+
+    // Format testimonials neatly for the prompt to keep it structured
+    const formattedTestimonials = testimonials.map((t, idx) => {
+      const designation = (t.title || t.company)
+        ? `(${t.title || ""}${t.title && t.company ? " @ " : ""}${t.company || ""})`
+        : "";
+      return `Testimonial #${idx + 1}:
+- Reviewer: ${t.name || "Anonymous user"} ${designation}
+- Rating: ${t.rating ? `${t.rating}/5 stars` : "5/5 stars"}
+- Review: "${t.content}"`;
+    }).join("\n\n");
+
+    const promptText = `
+You are a world-class copywriter and SaaS growth advisor.
+Analyze the sentiment, key selling points, and emotional hooks of the following customer reviews for "${brand}", and generate a conversion-focused, persuasive marketing copy deck.
+
+Here are the selected customer reviews:
+${formattedTestimonials}
+
+Tone of voice requirements: "${activeTone}"
+
+Please analyze the combined customer sentiment and synthesize their feedback into:
+1. High-impact social media posts for multiple platforms (LinkedIn, X/Twitter, and Instagram/Facebook).
+2. Professional website and landing-page copy that leverages the specific value-hooks of these reviews (such as specific problems solved, visual high-converting headlines, feature spotlights).
+
+Output a complete JSON object matching this exact schema:
+{
+  "campaignTitle": "A short, catchy, action-oriented campaign title summarizing the theme of these testimonials.",
+  "overallSentimentSummary": "A concise paragraph summarizing the shared customer sentiment and what users love most about ${brand}.",
+  "socialCopy": {
+    "linkedinPost": "A polished, structured LinkedIn post utilizing bullet points, quotes from these reviews, key value takeaways, and professional hashtags.",
+    "twitterPost": "A punchy, viral Twitter/X post under 280 characters with inline emojis, summarizing the main benefit.",
+    "facebookInstagramPost": "A warm, high-engagement Facebook/Instagram post with a friendly tone, incorporating customer quotes, and call-to-action."
+  },
+  "websiteMarketingCopy": {
+    "heroHeader": "A punchy, ultra-persuasive hero headline (e.g. bold claim or benefit) inspired by these reviews.",
+    "heroSubheader": "A supporting subheading (1-2 sentences) reinforcing the value proposition.",
+    "socialProofTagline": "A compelling, 1-sentence teaser/tagline to place right above the customer reviews section.",
+    "featureSpotlightTitle": "A title for a feature spotlight card summarizing the main solution/feature praised in these reviews.",
+    "featureSpotlightDescription": "A 2-3 sentence persuasive paragraph explaining this key feature's real-world benefit.",
+    "benefitBullets": [
+      {
+        "title": "Benefit 1 short title",
+        "description": "Short explanation of this benefit based on a specific customer win mentioned."
+      },
+      {
+        "title": "Benefit 2 short title",
+        "description": "Short explanation of this benefit based on a specific customer win mentioned."
+      },
+      {
+        "title": "Benefit 3 short title",
+        "description": "Short explanation of this benefit based on a specific customer win mentioned."
+      }
+    ]
+  }
+}
+    `.trim();
+
+    const generateResponse = await aiClient.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: promptText,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            campaignTitle: { type: Type.STRING },
+            overallSentimentSummary: { type: Type.STRING },
+            socialCopy: {
+              type: Type.OBJECT,
+              properties: {
+                linkedinPost: { type: Type.STRING },
+                twitterPost: { type: Type.STRING },
+                facebookInstagramPost: { type: Type.STRING }
+              },
+              required: ["linkedinPost", "twitterPost", "facebookInstagramPost"]
+            },
+            websiteMarketingCopy: {
+              type: Type.OBJECT,
+              properties: {
+                heroHeader: { type: Type.STRING },
+                heroSubheader: { type: Type.STRING },
+                socialProofTagline: { type: Type.STRING },
+                featureSpotlightTitle: { type: Type.STRING },
+                featureSpotlightDescription: { type: Type.STRING },
+                benefitBullets: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING },
+                      description: { type: Type.STRING }
+                    },
+                    required: ["title", "description"]
+                  }
+                }
+              },
+              required: ["heroHeader", "heroSubheader", "socialProofTagline", "featureSpotlightTitle", "featureSpotlightDescription", "benefitBullets"]
+            }
+          },
+          required: ["campaignTitle", "overallSentimentSummary", "socialCopy", "websiteMarketingCopy"]
+        }
+      }
+    });
+
+    const outputText = generateResponse.text;
+    if (!outputText) {
+      throw new Error("No output received from the Gemini AI model.");
+    }
+
+    const campaignPayload = JSON.parse(outputText);
+    res.json({
+      success: true,
+      tone: activeTone,
+      payload: campaignPayload
+    });
+  } catch (error: any) {
+    console.error("Gemini multi-review campaign copy generation failed:", error);
+    res.status(500).json({ error: error.message || "Failed to generate multi-review campaign copy." });
+  }
+});
+
 // Custom raw review rewriter API endpoint
 app.post("/api/gemini/rewrite-review", async (req, res) => {
   try {

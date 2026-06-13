@@ -54,6 +54,7 @@ export default function SaaS_GoogleDriveIntegration({
   const [pickedLogs, setPickedLogs] = useState<PickedFileLog[]>([]);
   const [selectedInspectFile, setSelectedInspectFile] = useState<any | null>(null);
   const [updateSuccessMsg, setUpdateSuccessMsg] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Dev configuration from firebase config
   const apiKey = firebaseConfig.apiKey;
@@ -99,6 +100,7 @@ export default function SaaS_GoogleDriveIntegration({
   const handleConnectGoogleDrive = async () => {
     setAuthChecking(true);
     setUpdateSuccessMsg("");
+    setAuthError(null);
     try {
       const provider = new GoogleAuthProvider();
       // Add standard read-only scope for files
@@ -129,6 +131,11 @@ export default function SaaS_GoogleDriveIntegration({
       }
     } catch (err: any) {
       console.error("Google Drive connection failed:", err);
+      let friendlyMsg = err.message || JSON.stringify(err);
+      if (err.code === "auth/popup-closed-by-user" || friendlyMsg.includes("popup-closed-by-user") || friendlyMsg.includes("cancelled-by-user")) {
+        friendlyMsg = "Google login popup was closed, cancelled, or blocked before authentication completed. Since you are in the AI Studio preview iframe, browser security settings block cookie/popups across origins. Please click 'Open in New Tab' at the top-right corner of the development viewport and try connecting your Google Drive there, which will bypass this restriction seamlessly!";
+      }
+      setAuthError(friendlyMsg);
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSyncLogs(prev => [
         {
@@ -366,6 +373,29 @@ export default function SaaS_GoogleDriveIntegration({
         <div className="bg-emerald-50 text-emerald-800 text-xs font-bold p-3.5 rounded-2xl border border-emerald-200/70 shadow-sm flex items-center gap-2.5">
           <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600" />
           <span>{updateSuccessMsg}</span>
+        </div>
+      )}
+
+      {/* Connection Auth Error Alert Bar */}
+      {authError && (
+        <div className="bg-red-50 text-red-900 text-xs font-bold p-5 rounded-2xl border border-red-200 shadow-md flex flex-col gap-3">
+          <div className="flex items-center gap-2.5 text-red-750">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+            <span className="font-black uppercase tracking-wider text-[10px]">Google Drive Auth Connection Alert</span>
+          </div>
+          <p className="font-semibold text-xs leading-relaxed text-red-800">
+            {authError}
+          </p>
+          <div className="pt-1.5">
+            <a 
+              href={window.location.href} 
+              target="_blank" 
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-900 border border-red-350 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xs cursor-pointer select-none"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-red-700" /> Open App in standalone New Tab & Try
+            </a>
+          </div>
         </div>
       )}
 

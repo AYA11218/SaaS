@@ -16,6 +16,7 @@ import { db, auth, handleFirestoreError, OperationType } from "../firebase";
 import { Space, Campaign, Testimonial, Widget, AISyntheticResult, UserSecurityConfig } from "../types";
 import { useTestimonialNotifications } from "../hooks/useTestimonialNotifications";
 import SaaS_GoogleDriveIntegration from "./SaaS_GoogleDriveIntegration";
+import SaaS_GoogleSheetsIntegration from "./SaaS_GoogleSheetsIntegration";
 import { SaaS_Sentiment_Dashboard } from "./SaaS_Sentiment_Dashboard";
 import { 
   Plus, 
@@ -53,7 +54,8 @@ import {
   Twitter,
   Instagram,
   RefreshCw,
-  Edit3
+  Edit3,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import SaaS_Widget_Embed from "./SaaS_Widget_Embed";
@@ -188,6 +190,21 @@ export default function SaaS_Dashboard() {
     { id: "INV-1823", date: "2026-04-15", description: "TrustBuilder Growth CRM Subscription", amount: "$49.00", status: "paid", method: "Visa Card (*4242)" }
   ]);
 
+  // Withdrawal States (Telebirr and CBE birr Ethiopian integrations)
+  const [withdrawalBalance, setWithdrawalBalance] = useState<number>(14800); // Base balance ETB 14,800.00
+  const [withdrawalProvider, setWithdrawalProvider] = useState<"Telebirr" | "CBE birr">("Telebirr");
+  const [withdrawalNumber, setWithdrawalNumber] = useState("");
+  const [withdrawalAccountName, setWithdrawalAccountName] = useState("");
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [withdrawalSuccess, setWithdrawalSuccess] = useState<string | null>(null);
+  const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
+  const [withdrawalLogFilter, setWithdrawalLogFilter] = useState<"all" | "Telebirr" | "CBE birr">("all");
+  const [withdrawalHistory, setWithdrawalHistory] = useState<any[]>([
+    { id: "WTH-2039", date: "2026-06-10", method: "Telebirr", reference: "TRB-98327429", amount: 4500.00, status: "Completed" },
+    { id: "WTH-1582", date: "2026-05-28", method: "CBE birr", reference: "CBE-10293481", amount: 2500.00, status: "Completed" }
+  ]);
+
   // Founder's Profitability Blueprint state
   const [bpTargetMRR, setBpTargetMRR] = useState(5000);
   const [bpMonthlyPrice, setBpMonthlyPrice] = useState(49);
@@ -292,6 +309,15 @@ export default function SaaS_Dashboard() {
   const [socialCopyTone, setSocialCopyTone] = useState<string>("Professional");
   const [socialCopyResult, setSocialCopyResult] = useState<any | null>(null);
   const [socialCopyError, setSocialCopyError] = useState<string | null>(null);
+
+  // Multi-Testimonial Marketing Copywriter States
+  const [selectedTestimonialIds, setSelectedTestimonialIds] = useState<string[]>([]);
+  const [multiCopyLoading, setMultiCopyLoading] = useState(false);
+  const [multiCopyTone, setMultiCopyTone] = useState<string>("Persuasive");
+  const [multiCopyResult, setMultiCopyResult] = useState<any | null>(null);
+  const [multiCopyError, setMultiCopyError] = useState<string | null>(null);
+  const [isMultiCopyModalOpen, setIsMultiCopyModalOpen] = useState(false);
+  const [multiActiveSubTab, setMultiActiveSubTab] = useState<"social" | "website">("social");
 
   // Raw Review Rewriter states
   const [rewriterRawReview, setRewriterRawReview] = useState("");
@@ -774,17 +800,28 @@ export default function SaaS_Dashboard() {
     if (selectedSpace) {
       setBillingPlan(selectedSpace.billingPlan || "Growth CRM ($49/mo)");
       if (selectedSpace.paymentMethod?.type === "mobile_money") {
-        setMomoProvider(selectedSpace.paymentMethod.momoProvider || "M-Pesa");
+        const prov = selectedSpace.paymentMethod.momoProvider || "M-Pesa";
+        setMomoProvider(prov);
         const savedPhone = selectedSpace.paymentMethod.momoPhoneNumber || "";
         const parts = savedPhone.split(" ");
+        let plainNumber = savedPhone;
         if (parts.length > 1) {
           setMomoCountry(parts[0]);
-          setMomoNumber(parts.slice(1).join(" "));
+          plainNumber = parts.slice(1).join(" ");
+          setMomoNumber(plainNumber);
         } else {
           setMomoNumber(savedPhone);
         }
-        setMomoAccountName(selectedSpace.paymentMethod.momoAccountName || "");
+        const accName = selectedSpace.paymentMethod.momoAccountName || "";
+        setMomoAccountName(accName);
         setMomoVerificationStep("success");
+
+        // Sync withdrawal fields if provider is CBE birr or Telebirr
+        if (prov === "Telebirr" || prov === "CBE birr") {
+          setWithdrawalProvider(prov as "Telebirr" | "CBE birr");
+          setWithdrawalNumber(plainNumber);
+          setWithdrawalAccountName(accName);
+        }
       } else {
         setMomoVerificationStep("idle");
         setMomoNumber("");
@@ -928,6 +965,127 @@ export default function SaaS_Dashboard() {
       setIsVerifyingMomo(false);
       handleFirestoreError(err, OperationType.UPDATE, `spaces/${selectedSpace.id}`);
     }
+  };
+
+  // CBE & Telebirr Withdrawal & Payout Functions
+  const [withdrawalStep, setWithdrawalStep] = useState<string>("");
+
+  const handleExecuteWithdrawal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWithdrawalError(null);
+    setWithdrawalSuccess(null);
+
+    const amt = parseFloat(withdrawalAmount);
+    if (!withdrawalNumber.trim()) {
+      setWithdrawalError(withdrawalProvider === "Telebirr" 
+        ? "Telebirr registered mobile phone number is required" 
+        : "CBE birr 10-to-13 digit standard bank account number is required"
+      );
+      return;
+    }
+    if (!withdrawalAccountName.trim()) {
+      setWithdrawalError("Registered beneficiary account/holder name is required");
+      return;
+    }
+    if (isNaN(amt) || amt <= 0) {
+      setWithdrawalError("Please provide a valid transfer amount greater than zero");
+      return;
+    }
+    if (amt > withdrawalBalance) {
+      setWithdrawalError(`Insufficient revenue pool funds. Maximum withdrawable amount is ETB ${withdrawalBalance.toLocaleString()}`);
+      return;
+    }
+    if (withdrawalProvider === "CBE birr" && withdrawalNumber.replace(/\D/g, "").length < 10) {
+      setWithdrawalError("Invalid CBE Account number. A standard CBE bank account must be between 10 to 13 digits");
+      return;
+    }
+
+    setIsWithdrawing(true);
+    setWithdrawalStep("Initializing payout gateway secure layer...");
+
+    // Stage 1: Route nodes
+    setTimeout(() => {
+      setWithdrawalStep(withdrawalProvider === "Telebirr"
+        ? "Accessing Ethio Telecom Telebirr direct payout router..."
+        : "Establishing secure SSL handshakes with Commercial Bank of Ethiopia (CBE) Core Server..."
+      );
+      
+      // Stage 2: Match account
+      setTimeout(() => {
+        setWithdrawalStep(`Matching beneficiary record: [${withdrawalAccountName}]...`);
+        
+        // Stage 3: Clear transaction
+        setTimeout(() => {
+          setWithdrawalStep("Executing remote electronic deposit terminal...");
+          
+          // Stage 4: Completed
+          setTimeout(() => {
+            const finalFee = 10.0; // Flat fee ETB 10.00
+            const finalDeducted = amt + finalFee;
+            
+            if (finalDeducted > withdrawalBalance) {
+              setWithdrawalError("Withdrawal failed: Surcharged flat fee of ETB 10.00 exceeds your available balance margin.");
+              setIsWithdrawing(false);
+              setWithdrawalStep("");
+              return;
+            }
+
+            const prefix = withdrawalProvider === "Telebirr" ? "TRB" : "CBE";
+            const newRef = `${prefix}-${Math.floor(1000000 + Math.random() * 9000000)}`;
+            const newLog = {
+              id: `WTH-${Math.floor(1000 + Math.random() * 9000)}`,
+              date: new Date().toISOString().split('T')[0],
+              method: withdrawalProvider,
+              reference: newRef,
+              amount: amt,
+              status: "Completed" as const
+            };
+
+            setWithdrawalBalance(prev => prev - finalDeducted);
+            setWithdrawalHistory(prev => [newLog, ...prev]);
+            
+            // Add to system sync logging dashboard
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            setSyncLogs(prev => [
+              {
+                id: `payout-logs-${Date.now()}`,
+                timestamp,
+                integration: `${withdrawalProvider} Gateway`,
+                message: `[PAYOUT SUCCESS] Transferred ETB ${amt.toLocaleString()} to ${withdrawalAccountName} (${withdrawalNumber}). Reference: ${newRef}. Carrier commission fee: ETB 10.00.`,
+                type: "success"
+              },
+              ...prev
+            ]);
+
+            setWithdrawalSuccess(`Success! Traded and dispatched ETB ${amt.toLocaleString()} to your verified ${withdrawalProvider} account. Electronic Transaction Reference: ${newRef}.`);
+            setIsWithdrawing(false);
+            setWithdrawalStep("");
+            setWithdrawalAmount(""); // Clear input
+          }, 1000);
+        }, 1000);
+      }, 1000);
+    }, 1000);
+  };
+
+  const handleImportCarrierDetails = () => {
+    if (!selectedSpace || !selectedSpace.paymentMethod || selectedSpace.paymentMethod.type !== "mobile_money") {
+      alert("No active mobile payment carrier is connected to this workspace profile yet. Connect CBE/Telebirr under the Payment Method panel first.");
+      return;
+    }
+    const carrier = selectedSpace.paymentMethod.momoProvider;
+    if (carrier !== "Telebirr" && carrier !== "CBE birr") {
+      alert(`The connected billing channel is listed as '${carrier}'. Direct withdraw is only optimized for 'Telebirr' and 'CBE birr' carriers.`);
+      return;
+    }
+
+    setWithdrawalProvider(carrier as "Telebirr" | "CBE birr");
+    const fullPhone = selectedSpace.paymentMethod.momoPhoneNumber || "";
+    const parts = fullPhone.split(" ");
+    setWithdrawalNumber(parts.length > 1 ? parts.slice(1).join(" ") : fullPhone);
+    setWithdrawalAccountName(selectedSpace.paymentMethod.momoAccountName || "");
+    
+    // Alert success
+    alert(`Successfully synchronized transfer targets from your verified ${carrier} Merchant configuration! 🎉`);
   };
 
   // Auth Operations
@@ -1182,6 +1340,54 @@ export default function SaaS_Dashboard() {
     }
   };
 
+  // Trigger generation of multi-testimonial copy deck using selected reviews
+  const handleGenerateMultiCopy = async (toneOverride?: string) => {
+    // Collect the selected testimonials from state
+    const selectedReviews = testimonials.filter(t => selectedTestimonialIds.includes(t.id));
+    if (selectedReviews.length === 0) {
+      setMultiCopyError("Please select at least one testimonial first.");
+      return;
+    }
+    const activeTone = toneOverride || multiCopyTone;
+    setMultiCopyLoading(true);
+    setMultiCopyError(null);
+    setMultiCopyResult(null);
+    setIsMultiCopyModalOpen(true); // Open the results modal to show loading state
+    try {
+      const res = await fetch("/api/gemini/generate-multi-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testimonials: selectedReviews,
+          companyName: selectedSpace?.name || "our company",
+          tone: activeTone
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to trigger multi-review AI copywriter.");
+      }
+      setMultiCopyResult(data.payload);
+      
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setSyncLogs(prev => [
+        {
+          id: `multi-copy-${Date.now()}`,
+          timestamp,
+          integration: "Gemini AI Copywriter",
+          message: `Generated custom ${activeTone} campaign with social and web copy for ${selectedReviews.length} selected reviews.`,
+          type: "success"
+        },
+        ...prev
+      ]);
+    } catch (err: any) {
+      console.error("AI Multi-Copywriter error:", err);
+      setMultiCopyError(err.message || "An unexpected error occurred during copywriting generation.");
+    } finally {
+      setMultiCopyLoading(false);
+    }
+  };
+
   // Raw Review Rewriter endpoint trigger handler
   const handleRewriteRawReview = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -1364,6 +1570,59 @@ export default function SaaS_Dashboard() {
             message: `Auto-generated deal/case validation card matching target pipeline: "${b2bPipeline}" with review text.`,
             type: "success"
           });
+        }
+
+        // Live Real-Time Google Sheets Sync Sync on Approval
+        const customSpaceObj: any = selectedSpace;
+        const sheetsSpreadsheetId = customSpaceObj?.sheetsSpreadsheetId;
+        const sheetsAutoSync = !!customSpaceObj?.sheetsAutoSync;
+        const googleAccessToken = sessionStorage.getItem("google_access_token");
+
+        if (sheetsAutoSync && sheetsSpreadsheetId && googleAccessToken) {
+          (async () => {
+            try {
+              const res = await fetch(
+                `https://sheets.googleapis.com/v4/spreadsheets/${sheetsSpreadsheetId}/values/Sheet1!A1:append?valueInputOption=USER_ENTERED`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${googleAccessToken}`,
+                    "Content-Type": "application/json"
+                  },
+                  body: JSON.stringify({
+                    majorDimension: "ROWS",
+                    values: [[
+                      item.id,
+                      item.name || "Anonymous Reviewer",
+                      item.email || "N/A",
+                      item.company || "",
+                      item.title || "",
+                      item.rating ? `${item.rating} Stars` : "5 Stars",
+                      item.content || "",
+                      "approved",
+                      item.sentiment || "Neutral",
+                      item.createdAt ? new Date(item.createdAt).toISOString() : new Date().toISOString()
+                    ]]
+                  })
+                }
+              );
+              if (res.ok) {
+                const sheetsTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                setSyncLogs((prev) => [
+                  {
+                    id: `sheets-auto-${Math.random().toString(36).slice(2, 9)}`,
+                    timestamp: sheetsTimestamp,
+                    integration: "Google Sheets Sync",
+                    message: `[AUTO-SYNC] Automatically streamed new approved review by ${item.name} to connected sheet.`,
+                    type: "success"
+                  },
+                  ...prev
+                ]);
+              }
+            } catch (err) {
+              console.error("Non-blocking real-time sheets append error:", err);
+            }
+          })();
         }
 
         if (newLogs.length > 0) {
@@ -3013,6 +3272,326 @@ export default function SaaS_Dashboard() {
                 </div>
               )}
 
+              {/* GEMINI MULTI-TESTIMONIAL CAMPAIGN GENERATOR MODAL */}
+              {isMultiCopyModalOpen && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]"
+                  >
+                    {/* Glowing Purple Header Ribbon */}
+                    <div className="h-2 bg-gradient-to-r from-indigo-600 via-sky-500 to-emerald-500 shrink-0" />
+                    
+                    {/* Header */}
+                    <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
+                      <div>
+                        <span className="text-[9px] font-black tracking-wider uppercase text-indigo-600 bg-indigo-55 border border-indigo-100 px-2.5 py-1 rounded-lg">Gemini Campaign Synthesizer</span>
+                        <h3 className="text-lg font-black text-slate-950 tracking-tight mt-2 flex items-center gap-2">
+                          <Sparkles className="w-5 h-5 text-indigo-500 animate-pulse" />
+                          <span>AI Marketing Campaign Creator</span>
+                        </h3>
+                        <p className="text-xs text-slate-450 font-semibold mt-0.5">Gemini has aggregated your selected customer reviews to craft premium multi-channel social & conversion website marketing materials.</p>
+                      </div>
+                      <button 
+                        onClick={() => setIsMultiCopyModalOpen(false)}
+                        className="p-2 text-slate-400 hover:text-slate-950 border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer transition-all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Main Scrollable Workspace Container */}
+                    <div className="overflow-y-auto p-6 space-y-6 flex-1 bg-slate-50/50">
+                      {multiCopyLoading ? (
+                        <div className="py-20 text-center space-y-4">
+                          <div className="relative w-16 h-16 mx-auto">
+                            <div className="absolute inset-0 rounded-full border-4 border-indigo-500/10 border-t-indigo-600 animate-spin" />
+                            <div className="absolute inset-2 rounded-full border-4 border-emerald-500/10 border-b-emerald-505 animate-spin animate-reverse" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-slate-900 animate-pulse">Running Gemini Pro Copywriting Models...</h4>
+                            <p className="text-xs text-slate-450 font-semibold mt-1">Synthesizing sentiment, extracting emotional benefit-hooks, and structuring copy decks.</p>
+                          </div>
+                        </div>
+                      ) : multiCopyError ? (
+                        <div className="p-6 bg-rose-50 border border-rose-200 rounded-3xl space-y-3">
+                          <div className="flex gap-2 items-center text-rose-800">
+                            <AlertCircle className="w-5 h-5 shrink-0" />
+                            <h4 className="text-xs font-black uppercase tracking-wider">AI Generation Pipeline Error</h4>
+                          </div>
+                          <p className="text-xs font-semibold text-rose-700 leading-relaxed">
+                            {multiCopyError}
+                          </p>
+                          <div className="pt-2">
+                            <button
+                              onClick={() => handleGenerateMultiCopy()}
+                              className="px-4 py-2 bg-rose-100 hover:bg-rose-205 text-rose-900 border border-rose-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                            >
+                              Retry Operation
+                            </button>
+                          </div>
+                        </div>
+                      ) : !multiCopyResult ? (
+                        <div className="text-center py-10">
+                          <p className="text-xs text-slate-455 font-bold">Please close and run a new campaign generation.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-6 text-left">
+                          
+                          {/* Title Banner & Sentiment Overview Section */}
+                          <div className="bg-gradient-to-r from-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-md border border-slate-800 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-extrabold px-2.5 py-1 rounded-lg border border-emerald-500/20 uppercase tracking-widest font-mono">
+                                Synthesized Campaign
+                              </span>
+                              <span className="text-[10px] bg-indigo-500/10 text-indigo-400 font-extrabold px-2.5 py-1 rounded-lg border border-indigo-500/20 uppercase tracking-widest font-mono">
+                                {multiCopyTone}
+                              </span>
+                            </div>
+                            <h3 className="text-base font-black text-white tracking-wide">{multiCopyResult.campaignTitle}</h3>
+                            <div className="h-px bg-slate-850 my-2" />
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Combined Reviews Sentiment Highlight:</span>
+                              <p className="text-xs text-slate-300 font-medium leading-relaxed italic">
+                                "{multiCopyResult.overallSentimentSummary}"
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Dual-View Copy Options Toggle tab-bar */}
+                          <div className="flex gap-1 p-1 bg-slate-200/60 rounded-2xl w-fit border border-slate-300/30">
+                            <button
+                              onClick={() => setMultiActiveSubTab("social")}
+                              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-all ${
+                                multiActiveSubTab === "social"
+                                  ? "bg-white text-slate-950 shadow-[0_2px_10px_rgba(0,0,0,0.05)] border border-slate-200"
+                                  : "text-slate-500 hover:text-slate-950"
+                              }`}
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              Social Campaign
+                            </button>
+                            <button
+                              onClick={() => setMultiActiveSubTab("website")}
+                              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-all ${
+                                multiActiveSubTab === "website"
+                                  ? "bg-white text-slate-950 shadow-[0_2px_10px_rgba(0,0,0,0.05)] border border-slate-200"
+                                  : "text-slate-500 hover:text-slate-950"
+                              }`}
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                              Website Conversion Copy
+                            </button>
+                          </div>
+
+                          {/* Sub-Tab 1: SOCIAL CAMPAIGN */}
+                          {multiActiveSubTab === "social" && (
+                            <div className="space-y-6">
+                              {/* LinkedIn card */}
+                              <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs hover:shadow-sm transition-all duration-200">
+                                <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-650">
+                                      <Linkedin className="w-4 h-4 fill-indigo-600 text-indigo-600" />
+                                    </div>
+                                    <span className="text-xs font-black text-slate-900 tracking-tight">LinkedIn Professional Strategy</span>
+                                  </div>
+                                  <button
+                                    onClick={() => triggerCopy(multiCopyResult.socialCopy.linkedinPost, "li-post")}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-805 flex items-center gap-1 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg cursor-pointer transition-all"
+                                  >
+                                    {copiedText === "li-post" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedText === "li-post" ? "Copied!" : "Copy Post"}</span>
+                                  </button>
+                                </div>
+                                <div className="p-4">
+                                  <textarea
+                                    className="w-full text-xs font-sans font-medium text-slate-705 leading-relaxed bg-slate-50/50 border border-slate-150 p-3 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none resize-none"
+                                    rows={8}
+                                    value={multiCopyResult.socialCopy.linkedinPost}
+                                    onChange={(e) => setMultiCopyResult((prev: any) => ({
+                                      ...prev,
+                                      socialCopy: { ...prev.socialCopy, linkedinPost: e.target.value }
+                                    }))}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Twitter/X card */}
+                              <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs hover:shadow-sm transition-all duration-200">
+                                <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-slate-900 tracking-tight font-mono">Twitter/X (Virality Spark)</span>
+                                  </div>
+                                  <button
+                                    onClick={() => triggerCopy(multiCopyResult.socialCopy.twitterPost, "tw-post")}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg cursor-pointer transition-all"
+                                  >
+                                    {copiedText === "tw-post" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedText === "tw-post" ? "Copied!" : "Copy Tweet"}</span>
+                                  </button>
+                                </div>
+                                <div className="p-4 space-y-2">
+                                  <textarea
+                                    className="w-full text-xs font-sans font-medium text-slate-705 leading-relaxed bg-slate-50/50 border border-slate-150 p-3 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none resize-none"
+                                    rows={4}
+                                    value={multiCopyResult.socialCopy.twitterPost}
+                                    onChange={(e) => setMultiCopyResult((prev: any) => ({
+                                      ...prev,
+                                      socialCopy: { ...prev.socialCopy, twitterPost: e.target.value }
+                                    }))}
+                                  />
+                                  <div className="text-right text-[10px] font-mono font-bold text-slate-400">
+                                    {multiCopyResult.socialCopy.twitterPost.length} Characters {multiCopyResult.socialCopy.twitterPost.length > 280 ? "⚠️ Over 280-char limit" : ""}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Facebook/Instagram card */}
+                              <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs hover:shadow-sm transition-all duration-200">
+                                <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-slate-900 tracking-tight">Facebook & Instagram Engagement</span>
+                                  </div>
+                                  <button
+                                    onClick={() => triggerCopy(multiCopyResult.socialCopy.facebookInstagramPost, "fb-post")}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-805 flex items-center gap-1 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg cursor-pointer transition-all"
+                                  >
+                                    {copiedText === "fb-post" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedText === "fb-post" ? "Copied!" : "Copy Post"}</span>
+                                  </button>
+                                </div>
+                                <div className="p-4">
+                                  <textarea
+                                    className="w-full text-xs font-sans font-medium text-slate-705 leading-relaxed bg-slate-50/50 border border-slate-150 p-3 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none resize-none"
+                                    rows={6}
+                                    value={multiCopyResult.socialCopy.facebookInstagramPost}
+                                    onChange={(e) => setMultiCopyResult((prev: any) => ({
+                                      ...prev,
+                                      socialCopy: { ...prev.socialCopy, facebookInstagramPost: e.target.value }
+                                    }))}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Sub-Tab 2: WEBSITE COPYWRITING */}
+                          {multiActiveSubTab === "website" && (
+                            <div className="space-y-6">
+                              {/* Hero section generator */}
+                              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                  <span className="text-xs font-black uppercase tracking-wider text-indigo-600 flex items-center gap-1">
+                                    <Sparkles className="w-3.5 h-3.5" /> High-conversion Hero Framework
+                                  </span>
+                                  <button
+                                    onClick={() => triggerCopy(`Headline: ${multiCopyResult.websiteMarketingCopy.heroHeader}\nSubheadline: ${multiCopyResult.websiteMarketingCopy.heroSubheader}`, "web-hero")}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-805 flex items-center gap-1 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg cursor-pointer"
+                                  >
+                                    {copiedText === "web-hero" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>{copiedText === "web-hero" ? "Copied!" : "Copy Hero Set"}</span>
+                                  </button>
+                                </div>
+                                <div className="space-y-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-150">
+                                  <p className="text-[10px] font-mono font-black text-indigo-505 tracking-wider">PROPOSED MAIN HEADER (H1):</p>
+                                  <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-snug">{multiCopyResult.websiteMarketingCopy.heroHeader}</h1>
+                                  
+                                  <div className="h-px bg-slate-200 my-2" />
+                                  
+                                  <p className="text-[10px] font-mono font-black text-indigo-505 tracking-wider">SUPPORTING SUBHEADLINE (SUBHERO):</p>
+                                  <p className="text-xs font-bold text-slate-500 leading-relaxed">{multiCopyResult.websiteMarketingCopy.heroSubheader}</p>
+                                </div>
+                              </div>
+
+                              {/* Section Social Proof Tagline */}
+                              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-3">
+                                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                  <span className="text-xs font-black uppercase tracking-wider text-slate-800">Section Header Intro Tagline</span>
+                                  <button
+                                    onClick={() => triggerCopy(multiCopyResult.websiteMarketingCopy.socialProofTagline, "web-tag")}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-805 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    {copiedText === "web-tag" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                    <span>Copy Tagline</span>
+                                  </button>
+                                </div>
+                                <p className="text-xs font-black text-slate-600 leading-normal italic text-center p-3.5 bg-indigo-50/20 rounded-xl border border-indigo-100/30">
+                                  "{multiCopyResult.websiteMarketingCopy.socialProofTagline}"
+                                </p>
+                              </div>
+
+                              {/* Feature Spotlight section */}
+                              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                  <span className="text-xs font-black uppercase tracking-wider text-emerald-600 flex items-center gap-1.5">
+                                    <Star className="w-4 h-4 fill-emerald-500 text-emerald-500" /> CORE VALUE SPOTLIGHT
+                                  </span>
+                                  <button
+                                    onClick={() => triggerCopy(`Spotlight: ${multiCopyResult.websiteMarketingCopy.featureSpotlightTitle}\nDescription: ${multiCopyResult.websiteMarketingCopy.featureSpotlightDescription}`, "web-spot")}
+                                    className="text-[10px] font-black text-indigo-600 hover:text-indigo-805 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    {copiedText === "web-spot" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                    <span>Copy Spotlight</span>
+                                  </button>
+                                </div>
+                                <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl border border-slate-800 space-y-2">
+                                  <h4 className="text-sm font-black text-[#60a5fa]">{multiCopyResult.websiteMarketingCopy.featureSpotlightTitle}</h4>
+                                  <p className="text-xs text-slate-300 font-semibold leading-relaxed">{multiCopyResult.websiteMarketingCopy.featureSpotlightDescription}</p>
+                                </div>
+                              </div>
+
+                              {/* Benefits extracted array */}
+                              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                  <span className="text-xs font-black uppercase tracking-wider text-slate-900">EXTRACTED CORE BENEFITS (PROVE IT WITH PROOF)</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  {multiCopyResult.websiteMarketingCopy.benefitBullets.map((benefit: any, bIdx: number) => (
+                                    <div key={bIdx} className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-inner space-y-2 relative text-left">
+                                      <div className="absolute top-2.5 right-3 text-[18px] font-black text-indigo-150/50 leading-none">
+                                        0{bIdx + 1}
+                                      </div>
+                                      <h5 className="text-xs font-black text-slate-900 tracking-tight pr-5">{benefit.title}</h5>
+                                      <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">{benefit.description}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer closing button bar */}
+                    <div className="p-6 bg-slate-100 border-t border-slate-150 flex justify-between items-center shrink-0">
+                      <span className="text-[10px] font-black text-slate-400 capitalize">
+                        Double-checked Copy deck
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateMultiCopy()}
+                          disabled={multiCopyLoading}
+                          className="px-5 py-3 bg-white hover:bg-slate-200 border border-slate-250 hover:border-slate-350 text-slate-800 rounded-2xl text-xs font-black cursor-pointer transition-all active:scale-98"
+                        >
+                          Regenerate Deck
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsMultiCopyModalOpen(false)}
+                          className="px-5 py-3 bg-indigo-600 hover:bg-indigo-550 text-white rounded-2xl text-xs font-black cursor-pointer transition-all shadow-sm shadow-indigo-650/40 active:scale-98 font-bold"
+                        >
+                          Close Workspace
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
               {shareCampaign && (
                 <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
                   <motion.div 
@@ -3266,6 +3845,82 @@ export default function SaaS_Dashboard() {
                 
                 {/* Left: Testimonials Stack List */}
                 <div className="lg:col-span-2 space-y-4">
+
+                  {/* Selection & Multi-Testimonial Campaign Action Board */}
+                  <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-3xl p-5 text-white flex flex-col md:flex-row gap-4 justify-between items-start md:items-center shadow-lg border border-indigo-900/50">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-indigo-500/20 text-indigo-300 rounded-lg">
+                          <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                        </span>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-200">AI Copywriting Suite</h4>
+                      </div>
+                      <p className="text-[11px] text-slate-300 font-medium">
+                        Select multiple testimonials from the list below, choose your marketing tone, and trigger Gemini to craft website copy, spotlight benefits, and social campaigns in a single tap.
+                      </p>
+                      <div className="flex gap-2 items-center text-[10px] text-slate-400 font-bold font-mono pt-1">
+                        <span>Selected: <span className="text-emerald-400 font-extrabold">{selectedTestimonialIds.length}</span> reviews</span>
+                        <span>•</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const shownIds = filteredTestimonials.map(t => t.id);
+                            setSelectedTestimonialIds(prev => {
+                              const otherIds = prev.filter(id => !shownIds.includes(id));
+                              if (shownIds.every(id => prev.includes(id))) {
+                                // deselect all shown
+                                return otherIds;
+                              } else {
+                                // select all shown
+                                return [...new Set([...prev, ...shownIds])];
+                              }
+                            });
+                          }}
+                          className="text-indigo-405 hover:text-indigo-300 underline cursor-pointer"
+                        >
+                          {filteredTestimonials.every(t => selectedTestimonialIds.includes(t.id)) && filteredTestimonials.length > 0 ? "Deselect Shown" : "Select All Shown"}
+                        </button>
+                        {selectedTestimonialIds.length > 0 && (
+                          <>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTestimonialIds([])}
+                              className="text-rose-455 hover:text-rose-300 underline cursor-pointer"
+                            >
+                              Clear Selection
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 w-full md:w-auto items-stretch md:items-center shrink-0">
+                      <select
+                        value={multiCopyTone}
+                        onChange={(e) => setMultiCopyTone(e.target.value)}
+                        className="bg-slate-800 border border-slate-705 rounded-xl px-2.5 py-2 text-[11px] font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      >
+                        {["Persuasive", "Professional", "SaaS Narrative", "High-Energy Bold", "Witty & Fun", "Educational/Teaser"].map(t => (
+                          <option key={t} value={t} className="bg-slate-900 text-white">{t}</option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateMultiCopy()}
+                        disabled={selectedTestimonialIds.length === 0}
+                        className={`inline-flex items-center justify-center gap-1.5 px-4.5 py-2 rounded-xl text-xs font-black tracking-wide transition-all shadow-md cursor-pointer ${
+                          selectedTestimonialIds.length > 0
+                            ? "bg-indigo-650 hover:bg-indigo-500 text-white active:scale-98"
+                            : "bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed opacity-60"
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-300 animate-bounce" />
+                        <span>Craft Copy Deck</span>
+                      </button>
+                    </div>
+                  </div>
                   
                   {/* Results count label */}
                   <div className="text-[10px] font-black text-slate-450 tracking-wider uppercase px-1">
@@ -3293,6 +3948,23 @@ export default function SaaS_Dashboard() {
                     >
                       {/* Left: Author & Content */}
                       <div className="flex gap-4 items-start flex-1">
+                        {/* Selector checkbox */}
+                        <div className="flex items-center shrink-0 pr-1 select-none pt-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedTestimonialIds.includes(t.id)}
+                            onChange={() => {
+                              setSelectedTestimonialIds(prev => 
+                                prev.includes(t.id) 
+                                  ? prev.filter(id => id !== t.id) 
+                                  : [...prev, t.id]
+                              );
+                            }}
+                            className="w-4.5 h-4.5 rounded-lg border-2 border-slate-350 text-indigo-600 focus:ring-4 focus:ring-indigo-500/10 cursor-pointer transition-all accent-indigo-600 shrink-0"
+                            title="Select for marketing campaign generation"
+                          />
+                        </div>
+
                         {t.avatarUrl ? (
                           <img src={t.avatarUrl} alt={t.name} className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md border border-slate-100" referrerPolicy="no-referrer" />
                         ) : (
@@ -4758,6 +5430,19 @@ export default function SaaS_Dashboard() {
                 setSyncLogs={setSyncLogs}
               />
 
+              {/* Google Sheets Integration */}
+              <SaaS_GoogleSheetsIntegration 
+                selectedSpace={selectedSpace}
+                onSpaceUpdate={(updatedSpace) => {
+                  setSelectedSpace(updatedSpace);
+                  setSpaces(prev => prev.map(s => s.id === updatedSpace.id ? updatedSpace : s));
+                }}
+                testimonials={testimonials}
+                selectedTestimonialIds={selectedTestimonialIds}
+                setSelectedTestimonialIds={setSelectedTestimonialIds}
+                setSyncLogs={setSyncLogs}
+              />
+
             </div>
           )}
 
@@ -5473,21 +6158,27 @@ export default function SaaS_Dashboard() {
 
                             <div className="space-y-1.5">
                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-sans">Select Mobile Operator Channel</label>
-                              <div className="grid grid-cols-3 gap-1.5">
+                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                                 {[
-                                  { name: "M-Pesa", color: "border-emerald-300 text-emerald-800 bg-emerald-50/20" },
-                                  { name: "MTN MoMo", color: "border-amber-300 text-amber-805 bg-amber-50/20" },
-                                  { name: "Airtel Money", color: "border-red-350 text-red-800 bg-red-50/10" }
+                                  { name: "M-Pesa", color: "border-emerald-300 text-emerald-800 bg-emerald-50/20", prefix: "+254" },
+                                  { name: "MTN MoMo", color: "border-amber-300 text-amber-805 bg-amber-50/20", prefix: "+233" },
+                                  { name: "Airtel Money", color: "border-red-350 text-red-800 bg-red-50/10", prefix: "+254" },
+                                  { name: "Telebirr", color: "border-cyan-300 text-cyan-800 bg-cyan-50/20", prefix: "+251" },
+                                  { name: "CBE birr", color: "border-purple-300 text-purple-800 bg-purple-50/20", prefix: "+251" }
                                 ].map((op) => (
                                   <button
                                     key={op.name}
                                     type="button"
-                                    onClick={() => setMomoProvider(op.name)}
-                                    className={`p-2 rounded-xl border text-[11px] font-extrabold flex items-center justify-center transition-all cursor-pointer ${
+                                    onClick={() => {
+                                      setMomoProvider(op.name);
+                                      setMomoCountry(op.prefix);
+                                    }}
+                                    className={`p-2 rounded-xl border text-[10px] font-extrabold flex items-center justify-center transition-all cursor-pointer truncate ${
                                       momoProvider === op.name 
                                         ? `${op.color} shadow-sm ring-2 ring-emerald-500/10 scale-102` 
                                         : "bg-white border-slate-200 text-slate-550 hover:bg-slate-50"
                                     }`}
+                                    title={op.name}
                                   >
                                     {op.name}
                                   </button>
@@ -5958,6 +6649,348 @@ export default function SaaS_Dashboard() {
                         </button>
                       </div>
                     )}
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* ETHIOPIAN REVENUE PAYOUTS & WITHDRAWAL GATEWAY */}
+              <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm space-y-6 animate-fade-in mt-6">
+                
+                {/* Hub Header */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1 bg-yellow-500/10 border border-yellow-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-yellow-700">
+                      🌍 ETHIOPIAN PAYOUT TERMINAL
+                    </span>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <Wallet className="w-5 h-5 text-indigo-500" />
+                      CBE Birr & Telebirr Revenue Withdrawal Portal
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-2xl font-sans text-left">
+                      Withdraw your gathered SaaS affiliate referral rewards, review campaign royalties, and developer micro-bounties directly to your Telebirr mobile wallet or Commercial Bank of Ethiopia (CBE) checking account in real-time.
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-1.5 shrink-0 bg-emerald-50 border border-emerald-250 px-3 py-1.5 rounded-2xl">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest font-mono">CBE & Telebirr Integrations Active</span>
+                  </div>
+                </div>
+
+                {/* Main Withdrawal Panel Content */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  
+                  {/* Ledger Balance & Transfer Form Panel */}
+                  <div className="lg:col-span-2 space-y-6">
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      
+                      {/* Live Available Balance Wallet */}
+                      <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white p-5 rounded-2xl border border-indigo-950 relative overflow-hidden flex flex-col justify-between shadow-sm text-left">
+                        <div className="absolute top-0 right-0 p-8 bg-sky-500/5 rounded-full blur-2xl pointer-events-none"></div>
+                        <div className="absolute bottom-0 left-0 p-8 bg-amber-500/5 rounded-full blur-2xl pointer-events-none"></div>
+                        
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-widest font-mono block">WITHDRAWABLE REVENUE POOL</span>
+                          <h4 className="text-2xl font-black font-sans leading-none text-emerald-400">
+                            ETB {withdrawalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 font-medium tracking-tight">
+                            ≈ ${(withdrawalBalance / 120.0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD <span className="text-yellow-400 font-mono font-bold">(1 USD = 120 ETB)</span>
+                          </p>
+                        </div>
+
+                        <div className="mt-4 pt-3.5 border-t border-slate-800 flex justify-between items-center text-[10px] font-semibold text-slate-400 leading-none">
+                          <span className="text-slate-500">Minimum payout: <strong className="text-slate-300 font-mono">ETB 100.00</strong></span>
+                          <span className="flex items-center gap-1.5"><Database className="w-3.5 h-3.5 text-indigo-400" /> Standard Escrow Account</span>
+                        </div>
+                      </div>
+
+                      {/* Info & Sync Action Panel */}
+                      <div className="bg-slate-50 border border-slate-205 p-5 rounded-2xl flex flex-col justify-between text-left space-y-3.5">
+                        <div className="space-y-1 font-sans">
+                          <span className="text-[9px] font-black uppercase text-indigo-500 tracking-wider font-mono">Integration Cohesion</span>
+                          <h4 className="text-xs font-black text-slate-900">Synchronize Payment Profiles</h4>
+                          <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                            Already linked CBE birr or Telebirr billing details? Sync your transfer target coordinates instantaneously with one click below.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleImportCarrierDetails}
+                          className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 bg-white hover:bg-slate-100 border border-slate-205 text-slate-800 rounded-xl text-[10.5px] font-black shadow-sm transition-all focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-indigo-500 animate-spin-slow" /> Import Merchant Connection Profile
+                        </button>
+                      </div>
+
+                    </div>
+
+                    {/* Interactive Form */}
+                    <form onSubmit={handleExecuteWithdrawal} className="bg-slate-50/50 border border-slate-200/80 p-5 rounded-2xl space-y-4 text-left">
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black tracking-wider text-slate-450 uppercase block">Select Target Settlement Gateway</label>
+                        <div className="grid grid-cols-2 gap-3 font-sans">
+                          
+                          {/* Telebirr selection */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWithdrawalProvider("Telebirr");
+                              setWithdrawalError(null);
+                            }}
+                            className={`p-3.5 rounded-xl border flex flex-col items-start gap-1 cursor-pointer transition-all ${
+                              withdrawalProvider === "Telebirr"
+                                ? "bg-cyan-500/5 border-cyan-450 ring-2 ring-cyan-500/10 shadow-sm"
+                                : "bg-white hover:bg-slate-50 border-slate-205"
+                            }`}
+                          >
+                            <div className="flex justify-between items-center w-full leading-none">
+                              <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-cyan-400"></span>
+                                Telebirr Wallet
+                              </span>
+                              {withdrawalProvider === "Telebirr" && <span className="text-cyan-600 text-xs font-bold font-sans">✓</span>}
+                            </div>
+                            <span className="text-[9.5px] text-slate-450 font-semibold leading-tight block">Ethio Telecom's secure mobile remittance</span>
+                          </button>
+
+                          {/* CBE birr selection */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWithdrawalProvider("CBE birr");
+                              setWithdrawalError(null);
+                            }}
+                            className={`p-3.5 rounded-xl border flex flex-col items-start gap-1 cursor-pointer transition-all ${
+                              withdrawalProvider === "CBE birr"
+                                ? "bg-purple-500/5 border-purple-450 ring-2 ring-purple-500/10 shadow-sm"
+                                : "bg-white hover:bg-slate-50 border-slate-205"
+                            }`}
+                          >
+                            <div className="flex justify-between items-center w-full leading-none">
+                              <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+                                CBE birr (Commercial Bank)
+                              </span>
+                              {withdrawalProvider === "CBE birr" && <span className="text-purple-600 text-xs font-bold font-sans">✓</span>}
+                            </div>
+                            <span className="text-[9.5px] text-slate-450 font-semibold leading-tight block">Direct Commercial Bank bank electronic settlement</span>
+                          </button>
+
+                        </div>
+                      </div>
+
+                      {/* Account Inputs Layout (Row) */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        
+                        <div>
+                          <label className="text-[10px] font-black tracking-wider text-slate-450 uppercase block mb-1">
+                            {withdrawalProvider === "Telebirr" ? "Telebirr Registered Phone (+251)" : "Standard CBE Account Number"}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={withdrawalProvider === "Telebirr" ? "e.g. 912345678" : "e.g. 1000123456789 (10-13 digits)"}
+                            value={withdrawalNumber}
+                            onChange={(e) => setWithdrawalNumber(e.target.value.replace(/\D/g, ''))}
+                            className="w-full text-xs font-semibold font-mono px-3 py-2.5 bg-white border border-slate-205 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all text-slate-900"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black tracking-wider text-slate-450 uppercase block mb-1">
+                            Registered Account Holder Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Ayan Atamene"
+                            value={withdrawalAccountName}
+                            onChange={(e) => setWithdrawalAccountName(e.target.value)}
+                            className="w-full text-xs font-bold px-3 py-2.5 bg-white border border-slate-205 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all text-slate-905"
+                          />
+                        </div>
+
+                      </div>
+
+                      {/* Amount & Presets */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-baseline mb-1">
+                          <label className="text-[10px] font-black tracking-wider text-slate-455 uppercase block">Transfer Amount (ETB)</label>
+                          <span className="text-[10.5px] text-slate-450 font-semibold">Flat Processing Fee: <strong className="text-slate-800 font-mono">ETB 10.00</strong></span>
+                        </div>
+                        
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 leading-none flex items-center pointer-events-none text-xs font-black text-slate-400 font-mono">
+                            ETB
+                          </div>
+                          <input
+                            type="number"
+                            min="100"
+                            step="10"
+                            placeholder="e.g. 1000"
+                            value={withdrawalAmount}
+                            onChange={(e) => setWithdrawalAmount(e.target.value)}
+                            className="w-full text-sm font-black font-mono pl-11 pr-3 py-3 bg-white border border-slate-205 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all text-slate-900"
+                          />
+                        </div>
+
+                        {/* Presets */}
+                        <div className="flex flex-wrap gap-2 pt-1 font-sans">
+                          {[
+                            { value: "1000", label: "ETB 1k" },
+                            { value: "3000", label: "ETB 3k" },
+                            { value: "5000", label: "ETB 5k" },
+                            { value: "10000", label: "ETB 10k" },
+                            { value: `${withdrawalBalance}`, label: "Withdraw Max" }
+                          ].map((preset) => (
+                            <button
+                              type="button"
+                              key={preset.value}
+                              onClick={() => {
+                                if (preset.value === `${withdrawalBalance}`) {
+                                  const maxVal = Math.max(0, withdrawalBalance - 10);
+                                  setWithdrawalAmount(String(maxVal));
+                                } else {
+                                  setWithdrawalAmount(preset.value);
+                                }
+                                setWithdrawalError(null);
+                              }}
+                              className="px-2.5 py-1.5 border border-slate-200 hover:border-slate-350 hover:bg-slate-100 bg-white text-slate-650 text-[10px] font-black rounded-lg transition-all cursor-pointer shadow-sm active:scale-98"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Display validation outcomes */}
+                      {withdrawalError && (
+                        <div className="p-3 bg-red-50 text-red-700 rounded-xl text-[10.5px] font-semibold border border-red-200/50 leading-relaxed leading-normal">
+                          ⚠️ {withdrawalError}
+                        </div>
+                      )}
+
+                      {withdrawalSuccess && (
+                        <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl text-[10.5px] font-semibold border border-emerald-200/50 leading-relaxed leading-normal">
+                          🎉 {withdrawalSuccess}
+                        </div>
+                      )}
+
+                      {/* Submit action */}
+                      <button
+                        type="submit"
+                        disabled={isWithdrawing || !withdrawalAmount || parseFloat(withdrawalAmount) <= 0}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all active:scale-98 border border-indigo-700 tracking-wider uppercase font-mono disabled:bg-slate-300 disabled:border-slate-300 disabled:cursor-not-allowed"
+                      >
+                        {isWithdrawing ? (
+                          <>
+                            <Loader className="w-4 h-4 animate-spin text-white pr-2.5" />
+                            <span>{withdrawalStep}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4 text-white pr-1" />
+                            <span>Request Electronic Payout Transfer</span>
+                          </>
+                        )}
+                      </button>
+
+                    </form>
+
+                  </div>
+
+                  {/* Ledger Logs Historical Table Panel (1 Column) */}
+                  <div className="bg-slate-50/30 border border-slate-250 rounded-2xl p-5 space-y-4">
+                    
+                    <div className="flex flex-col gap-2 border-b border-slate-100 pb-3">
+                      <div className="flex justify-between items-center text-left">
+                        <h4 className="text-xs font-black text-slate-905 tracking-tight flex items-center gap-1.5 font-sans">
+                          <Clock className="w-4 h-4 text-emerald-500 animate-pulse" />
+                          Payouts History Ledger
+                        </h4>
+                        <span className="text-[9px] font-mono font-bold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded-full">
+                          {withdrawalHistory.length} logs
+                        </span>
+                      </div>
+                      
+                      {/* Filter switches */}
+                      <div className="flex gap-1 bg-slate-150 p-0.5 rounded-lg border border-slate-200 font-sans">
+                        {(["all", "Telebirr", "CBE birr"] as const).map((filter) => (
+                          <button
+                            key={filter}
+                            type="button"
+                            onClick={() => setWithdrawalLogFilter(filter)}
+                            className={`flex-grow py-1 rounded-md text-[10px] font-extrabold capitalize transition-all cursor-pointer ${
+                              withdrawalLogFilter === filter
+                                ? "bg-white text-slate-950 shadow-sm border border-slate-200"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            {filter}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5 overflow-y-auto max-h-[360px] pr-1">
+                      {withdrawalHistory
+                        .filter(item => withdrawalLogFilter === "all" || item.method === withdrawalLogFilter)
+                        .map((log) => {
+                          const isTele = log.method === "Telebirr";
+                          
+                          return (
+                            <div key={log.id} className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col gap-1.5 shadow-xs text-left relative overflow-hidden">
+                              {/* Decors left strip according to provider */}
+                              <div className={`absolute top-0 bottom-0 left-0 w-1 ${isTele ? "bg-cyan-500" : "bg-purple-600"}`}></div>
+
+                              <div className="pl-1.5 flex justify-between items-start">
+                                <div className="space-y-0.5 animate-fade-in">
+                                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 font-mono">
+                                    {log.id} ({log.date})
+                                  </span>
+                                  <div className="text-xs font-black text-slate-850 flex items-center gap-1 font-sans">
+                                    {isTele ? (
+                                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
+                                    ) : (
+                                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+                                    )}
+                                    {log.method} Payout
+                                  </div>
+                                </div>
+
+                                <div className="text-right space-y-0.5">
+                                  <strong className="text-xs font-black text-slate-905 font-mono">
+                                    ETB {log.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </strong>
+                                  <span className="text-[9.5px] block font-mono text-emerald-600 font-black tracking-widest uppercase">
+                                    ● {log.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="pl-1.5 pt-1.5 border-t border-slate-50 flex justify-between items-center text-[9px] text-slate-450 font-semibold font-mono">
+                                <span className="truncate pr-1">Ref: {log.reference}</span>
+                                <span>Fee: ETB 10.00</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                      {withdrawalHistory.filter(item => withdrawalLogFilter === "all" || item.method === withdrawalLogFilter).length === 0 && (
+                        <div className="p-8 text-center text-[10px] font-semibold text-slate-400 bg-slate-50 border border-slate-100 rounded-xl leading-relaxed">
+                          No settlement records cataloged matching filter parameters.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-amber-500/5 border border-amber-250 p-3 rounded-xl font-sans text-left text-[9.5px] leading-relaxed text-amber-805 font-semibold">
+                      📋 <strong>SNDBX clearing notice:</strong> Outward remittance transfers simulate actual bank core interfaces and process client credits smoothly instantly.
+                    </div>
+
                   </div>
 
                 </div>
