@@ -32,7 +32,7 @@ import {
   AlertCircle,
   Camera
 } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 
 interface SaaSStoreFormProps {
   slug: string;
@@ -55,6 +55,23 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Form dynamic Toast states
+  interface FormToast {
+    id: string;
+    title: string;
+    type: "success" | "error" | "info";
+    description?: string;
+  }
+  const [formToasts, setFormToasts] = useState<FormToast[]>([]);
+
+  const triggerToast = (title: string, type: "success" | "error" | "info" = "success", description?: string) => {
+    const id = `toast-${Date.now()}`;
+    setFormToasts((prev) => [...prev, { id, title, type, description }]);
+    setTimeout(() => {
+      setFormToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  };
 
   // Form states
   const [rating, setRating] = useState<number>(5);
@@ -309,6 +326,7 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
       try {
         await addDoc(collection(db, "testimonials"), testimonialPayload);
         setSuccess(true);
+        triggerToast("Testimonial Submitted!", "success", "Your valuable feedback has been submitted successfully!");
         // Clean up stream triggers
         stopCameraStream(mediaStream);
         setMediaStream(null);
@@ -830,6 +848,64 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
           Powered by <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 shrink-0" /> Kudos Platform
         </p>
       </div>
+
+      {/* Dynamic Toast feedback layer */}
+      <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {formToasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95, transition: { duration: 0.15 } }}
+              layout
+              className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-4 shadow-xl pointer-events-auto flex flex-col gap-1 ring-1 ring-emerald-500/30"
+            >
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    {toast.type === "success" ? (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </>
+                    ) : toast.type === "error" ? (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+                      </>
+                    )}
+                  </span>
+                  <span className="text-[10px] font-black tracking-widest uppercase font-mono text-emerald-400">
+                    {toast.type === "success" ? "Success" : toast.type === "error" ? "Error" : "Context"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="text-slate-400 hover:text-white transition-colors text-xs select-none"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-xs font-sans">
+                <p className="font-extrabold text-slate-100">{toast.title}</p>
+                {toast.description && (
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-normal font-medium">
+                    {toast.description}
+                  </p>
+                )}
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
     </div>
   );
 }

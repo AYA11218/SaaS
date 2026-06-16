@@ -1,14 +1,20 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, setLogLevel } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
 
-// CRITICAL: Initialize Firestore with the multi-database ID and enable long-polling to prevent connection timeouts/failures
+// Silence verbose connection warnings in environments/sandboxes with restricted network access
+setLogLevel("error");
+
+// CRITICAL: Initialize Firestore with the multi-database ID, local multi-tab cache, and enable long-polling to prevent connection timeouts/failures
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, (firebaseConfig as any).firestoreDatabaseId);
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+}, (firebaseConfig as any).firestoreDatabaseId || "(default)");
 export const auth = getAuth();
 
 export enum OperationType {

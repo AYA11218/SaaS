@@ -47,6 +47,10 @@ export default function SaaS_GoogleSheetsIntegration({
   const [manualSheetUrl, setManualSheetUrl] = useState("");
   const [manualLinkError, setManualLinkError] = useState<string | null>(null);
 
+  // Manual bypass token states
+  const [showManualTokenInput, setShowManualTokenInput] = useState(false);
+  const [manualTokenVal, setManualTokenVal] = useState("");
+
   // Cast Space values 
   const customSpace = selectedSpace as any;
   const sheetsSpreadsheetId = customSpace?.sheetsSpreadsheetId || "";
@@ -61,6 +65,8 @@ export default function SaaS_GoogleSheetsIntegration({
       setGoogleAccessToken(savedToken);
     }
   }, []);
+
+  const isIFrame = typeof window !== "undefined" && window.self !== window.top;
 
   // Listen to session storage changes or window focus to sync token
   useEffect(() => {
@@ -137,6 +143,37 @@ export default function SaaS_GoogleSheetsIntegration({
       },
       ...prev
     ]);
+  };
+
+  const handleSaveManualToken = (e: React.FormEvent) => {
+    e.preventDefault();
+    setOperationSuccess(null);
+    setAuthError(null);
+    
+    const token = manualTokenVal.trim();
+    if (!token) {
+      setAuthError("Please paste a valid Google Access Token.");
+      return;
+    }
+
+    setGoogleAccessToken(token);
+    sessionStorage.setItem("google_access_token", token);
+    
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setSyncLogs(prev => [
+      {
+        id: `sheets-manual-connect-${Date.now()}`,
+        timestamp,
+        integration: "Google Sheets Sync",
+        message: "Successfully registered manual Google API Access Token via developer override.",
+        type: "success"
+      },
+      ...prev
+    ]);
+    
+    setOperationSuccess("Manually authorized Google account successfully via developer token bypass!");
+    setManualTokenVal("");
+    setShowManualTokenInput(false);
   };
 
   // Create a brand new Google Spreadsheet with headers
@@ -492,6 +529,75 @@ export default function SaaS_GoogleSheetsIntegration({
   return (
     <div className="bento-card-glass rounded-3xl border border-slate-200/60 p-6 shadow-xs space-y-6">
       
+      {/* Proactive Iframe Sandbox Notification */}
+      {isIFrame && !googleAccessToken && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs font-semibold p-4.5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 relative text-left select-none">
+          <div className="space-y-0.5">
+            <span className="text-[9px] font-black uppercase text-amber-700 tracking-wider font-mono">⚠️ SANDBOX IFRAME ENVIRONMENT DETECTED</span>
+            <p className="leading-relaxed font-sans text-slate-705">
+              Browser security boundaries inside embedded preview tabs might block Google popups. 
+              Click <strong>"Open in New Tab"</strong> at the top-right of your workspace to authenticate, or click below for manual credential pasting.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <a 
+              href={window.location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold rounded-xl text-[9px] uppercase tracking-wider transition-all shadow-xs"
+            >
+              Open Standalone Tab ↗
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowManualTokenInput(!showManualTokenInput)}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-705 border border-slate-250 font-extrabold rounded-xl text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+            >
+              🔑 Paste Token Manual Bypass
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Access Token Input Override Form */}
+      {showManualTokenInput && (
+        <form onSubmit={handleSaveManualToken} className="bg-slate-900 text-white rounded-2xl p-4.5 border border-slate-800 space-y-3 text-left animate-fade-in">
+          <div className="space-y-1">
+            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 font-mono flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Manual Google OAuth Bypass
+            </span>
+            <p className="text-[10px] text-slate-400 font-semibold leading-relaxed font-sans">
+              Provide a valid Google Access Token (e.g. from the Google OAuth Playground or a standalone login session) to immediately connect Google Sheets without popup prompts.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="password"
+              placeholder="Paste Google Access Token (begins with ya29...)"
+              value={manualTokenVal}
+              onChange={(e) => setManualTokenVal(e.target.value)}
+              className="flex-grow bg-slate-950 border border-slate-850 text-xs px-3 py-2 rounded-xl text-emerald-400 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-550/50"
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-505 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Apply Token
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowManualTokenInput(false)}
+                className="flex-1 sm:flex-none px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
       {/* Module Header block */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
         <div className="flex gap-3">
@@ -522,24 +628,34 @@ export default function SaaS_GoogleSheetsIntegration({
               onClick={handleDisconnectGoogleSheets}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all hover:scale-102 active:scale-98"
             >
-              <Unlink className="w-3.5 h-3.5 text-rose-400" /> Disconnect Google
+              <Unlink className="w-3.5 h-3.5 text-rose-450" /> Disconnect Google
             </button>
           ) : (
-            <button
-              disabled={authChecking}
-              onClick={handleConnectGoogleSheets}
-              className="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shadow-md shadow-emerald-600/10 hover:scale-102 active:scale-98"
-            >
-              {authChecking ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Verifying accounts...
-                </>
-              ) : (
-                <>
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" /> Connect Google Sheets
-                </>
-              )}
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                disabled={authChecking}
+                onClick={handleConnectGoogleSheets}
+                className="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-emerald-600 hover:bg-emerald-505 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all shadow-md shadow-emerald-500/10 hover:scale-102 active:scale-98"
+              >
+                {authChecking ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Verifying accounts...
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" /> Connect Google Sheets
+                  </>
+                )}
+              </button>
+              
+              <button 
+                type="button"
+                onClick={() => setShowManualTokenInput(!showManualTokenInput)}
+                className="text-[9px] text-slate-400 hover:text-emerald-600 font-bold uppercase tracking-wider select-none cursor-pointer hover:underline"
+              >
+                {showManualTokenInput ? "Hide Manual Bypass" : "🔑 Trouble connecting? Manual Token Bypass"}
+              </button>
+            </div>
           )}
         </div>
       </div>

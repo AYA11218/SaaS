@@ -18,6 +18,7 @@ import { useTestimonialNotifications } from "../hooks/useTestimonialNotification
 import SaaS_GoogleDriveIntegration from "./SaaS_GoogleDriveIntegration";
 import SaaS_GoogleSheetsIntegration from "./SaaS_GoogleSheetsIntegration";
 import { SaaS_Sentiment_Dashboard } from "./SaaS_Sentiment_Dashboard";
+import { SaaS_Collection_Trends } from "./SaaS_Collection_Trends";
 import { 
   Plus, 
   Check, 
@@ -172,7 +173,7 @@ export default function SaaS_Dashboard() {
     }
   };
   const [activeTab, setActiveTab] = useState<"campaigns" | "testimonials" | "widgets" | "ai" | "integrations" | "blueprint" | "billing">("campaigns");
-  const [aiSubTab, setAiSubTab] = useState<"sentiment" | "copywriter" | "rewriter">("sentiment");
+  const [aiSubTab, setAiSubTab] = useState<"sentiment" | "collection" | "copywriter" | "rewriter">("sentiment");
 
   // Mobile Money & Billing Workspace State Controls
   const [billingPlan, setBillingPlan] = useState<"Free Tier" | "Growth CRM ($49/mo)" | "Pro Suite ($99/mo)" | "Enterprise Sync ($149/mo)">("Growth CRM ($49/mo)");
@@ -302,6 +303,24 @@ export default function SaaS_Dashboard() {
   const [dbLoading, setDbLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // Dynamic User Action / System Toast feedback states
+  interface FeedbackToast {
+    id: string;
+    title: string;
+    message: string;
+    type: "success" | "info" | "warning" | "error";
+    description?: string;
+  }
+  const [feedbackToasts, setFeedbackToasts] = useState<FeedbackToast[]>([]);
+
+  const showFeedback = (title: string, message: string, type: "success" | "info" | "warning" | "error" = "success", description?: string) => {
+    const id = `feedback-toast-${Date.now()}`;
+    setFeedbackToasts((prev) => [...prev, { id, title, message, type, description }]);
+    setTimeout(() => {
+      setFeedbackToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5005);
+  };
 
   // Social Media Marketing Copywriter modal states
   const [socialCopyReview, setSocialCopyReview] = useState<any | null>(null);
@@ -1145,16 +1164,26 @@ export default function SaaS_Dashboard() {
       }
 
       // Populate Testimonials
+      let index = 0;
       for (const item of SEED_TESTIMONIALS) {
+        const date = new Date();
+        // Disperse over past months to show gorgeous, progressive Recharts visual trends out of the box!
+        date.setMonth(date.getMonth() - (4 - index)); 
         await addDoc(collection(db, "testimonials"), {
           ...item,
           campaignId: targetCampId,
           spaceId: selectedSpace.id,
-          createdAt: new Date().toISOString()
+          createdAt: date.toISOString()
         });
+        index++;
       }
 
       await loadWorkspaceData();
+      showFeedback(
+        "Sandbox Seeding Successful!",
+        "Successfully populated your business workspace with 5 high-converting mock customer reviews and widgets.",
+        "success"
+      );
     } catch (err) {
       console.error(err);
       alert("Failed to seed workspace demo content.");
@@ -1320,6 +1349,13 @@ export default function SaaS_Dashboard() {
       }
       setSocialCopyResult(data.payload);
       
+      // Show high context toast notification
+      showFeedback(
+        "Marketing Copy Generated",
+        `Successfully generated "${activeTone}" tone social copy for ${socialCopyReview.name}.`,
+        "success"
+      );
+      
       // Log event in sync logs feed so user gets real-time success context
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSyncLogs(prev => [
@@ -1369,6 +1405,12 @@ export default function SaaS_Dashboard() {
       }
       setMultiCopyResult(data.payload);
       
+      showFeedback(
+        "AI Campaign Deck Drafted",
+        `Generated social & web marketing copies for ${selectedReviews.length} selected testimonials using ${activeTone} tone.`,
+        "success"
+      );
+      
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSyncLogs(prev => [
         {
@@ -1414,6 +1456,12 @@ export default function SaaS_Dashboard() {
         throw new Error(data.error || "Failed to rewrite review.");
       }
       setRewriterResult(data.payload);
+      
+      showFeedback(
+        "Feedback Rewritten Successfully",
+        `Rewrote client review using "${rewriterTone}" style into standard "${rewriterFormat}" templates.`,
+        "success"
+      );
       
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSyncLogs(prev => [
@@ -4514,7 +4562,7 @@ export default function SaaS_Dashboard() {
             <div className="space-y-6">
               
               {/* AISpark sub-navigation toggle */}
-              <div className="flex border-b border-slate-150 pb-1.5 gap-6">
+              <div className="flex border-b border-slate-150 pb-1.5 gap-6 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setAiSubTab("sentiment")}
@@ -4526,6 +4574,20 @@ export default function SaaS_Dashboard() {
                 >
                   📈 Sentiment Trend Charts
                   {aiSubTab === "sentiment" && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full animate-fade-in" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiSubTab("collection")}
+                  className={`pb-2.5 text-xs font-black uppercase tracking-widest transition-all relative outline-none cursor-pointer ${
+                    aiSubTab === "collection"
+                      ? "text-indigo-600 font-extrabold"
+                      : "text-slate-400 hover:text-slate-700"
+                  }`}
+                >
+                  📊 Collection Trends
+                  {aiSubTab === "collection" && (
                     <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full animate-fade-in" />
                   )}
                 </button>
@@ -4561,6 +4623,10 @@ export default function SaaS_Dashboard() {
 
               {aiSubTab === "sentiment" && (
                 <SaaS_Sentiment_Dashboard testimonials={testimonials} />
+              )}
+
+              {aiSubTab === "collection" && (
+                <SaaS_Collection_Trends testimonials={testimonials} campaigns={campaigns} />
               )}
 
               {aiSubTab === "copywriter" && (
@@ -7018,6 +7084,56 @@ export default function SaaS_Dashboard() {
       {/* Real-time Toasts Overlay container */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
         <AnimatePresence>
+          {feedbackToasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95, transition: { duration: 0.15 } }}
+              layout
+              className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-4 shadow-xl pointer-events-auto flex flex-col gap-1 ring-1 ring-emerald-500/30 font-sans"
+            >
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    {toast.type === "success" ? (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </>
+                    ) : toast.type === "error" ? (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+                      </>
+                    )}
+                  </span>
+                  <span className="text-[10px] font-black tracking-widest uppercase font-mono text-emerald-400">
+                    {toast.type === "success" ? "Success" : toast.type === "error" ? "Failure" : "Context"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="text-slate-400 hover:text-white transition-colors text-xs select-none cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-xs">
+                <p className="font-extrabold text-slate-100">{toast.title}</p>
+                <p className="text-[11px] text-slate-400 mt-1 font-semibold leading-relaxed">
+                  {toast.message}
+                </p>
+              </div>
+            </motion.div>
+          ))}
+
           {toasts.map((toast) => (
             <motion.div
               key={toast.id}
