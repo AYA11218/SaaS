@@ -30,7 +30,8 @@ import {
   RotateCcw,
   AlertTriangle,
   AlertCircle,
-  Camera
+  Camera,
+  Upload
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -86,6 +87,8 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
 
   // Video testimonial recording states
   const [reviewType, setReviewType] = useState<"text" | "video">("text");
+  const [videoMode, setVideoMode] = useState<"record" | "upload">("record");
+  const [isDragging, setIsDragging] = useState(false);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordingState, setRecordingState] = useState<"idle" | "requesting" | "recording" | "recorded">("idle");
@@ -199,6 +202,56 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
     stopCameraStream(mediaStream);
   };
 
+  const handleFileUpload = (file: File) => {
+    if (!file) return;
+    
+    if (!file.type.startsWith("video/")) {
+      setVideoError("Unsupported file format. Please upload a valid MP4, WebM, or QuickTime video.");
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      triggerToast("Large file", "info", "Video file is larger than 25MB. Loading files of this scale may take longer to preview.");
+    }
+
+    setVideoError(null);
+    setVideoBlob(file);
+    const objUrl = URL.createObjectURL(file);
+    setVideoObjectURL(objUrl);
+    setRecordingState("recorded"); // Transition directly to loaded preview
+
+    // Read media duration metadata on frame load
+    try {
+      const tempVideo = document.createElement("video");
+      tempVideo.preload = "metadata";
+      tempVideo.src = objUrl;
+      tempVideo.onloadedmetadata = () => {
+        setRecordedDuration(Math.round(tempVideo.duration) || 0);
+      };
+    } catch (e) {
+      console.error("Duration meta extraction error:", e);
+      setRecordedDuration(0);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  };
+
   const handleResetRecording = () => {
     if (recordingTimer) {
       clearInterval(recordingTimer);
@@ -211,7 +264,9 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
     setVideoBlob(null);
     setRecordedDuration(0);
     setRecordingState("idle");
-    startCamera();
+    if (videoMode === "record") {
+      startCamera();
+    }
   };
 
   useEffect(() => {
@@ -561,10 +616,59 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-fade-in">
+                  {/* Select Record vs Upload Option */}
+                  <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVideoMode("record");
+                        setVideoError(null);
+                        setVideoBlob(null);
+                        if (videoObjectURL) {
+                          URL.revokeObjectURL(videoObjectURL);
+                          setVideoObjectURL(null);
+                        }
+                        setRecordingState("idle");
+                        startCamera();
+                      }}
+                      className={`flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        videoMode === "record"
+                          ? "bg-white text-slate-900 shadow-xs border border-slate-100"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      <Camera className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Record Video</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVideoMode("upload");
+                        setVideoError(null);
+                        setVideoBlob(null);
+                        if (videoObjectURL) {
+                          URL.revokeObjectURL(videoObjectURL);
+                          setVideoObjectURL(null);
+                        }
+                        stopCameraStream(mediaStream);
+                        setMediaStream(null);
+                        setRecordingState("idle");
+                      }}
+                      className={`flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        videoMode === "upload"
+                          ? "bg-white text-slate-900 shadow-xs border border-slate-100"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Upload Video File</span>
+                    </button>
+                  </div>
+
                   <div className="bg-slate-900 rounded-3xl overflow-hidden relative shadow-xl border-2 border-slate-800 flex flex-col justify-between align-middle h-80">
                     {/* Live Stream Viewfinder */}
-                    {recordingState === "requesting" && (
+                    {videoMode === "record" && recordingState === "requesting" && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950 text-white z-10">
                         <Loader className="w-10 h-10 text-rose-500 animate-spin mb-3" />
                         <span className="text-xs font-bold uppercase tracking-wider font-mono">Requesting client camera/mic permissions...</span>
@@ -574,20 +678,27 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                     {videoError && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-slate-950 text-rose-400 z-10">
                         <AlertTriangle className="w-12 h-12 mb-3 animate-bounce text-rose-500" />
-                        <h4 className="text-xs font-black uppercase tracking-wider">Access Blocked</h4>
+                        <h4 className="text-xs font-black uppercase tracking-wider">Operation Interrupted</h4>
                         <p className="text-[11px] font-semibold text-slate-400 max-w-sm mt-1 mb-4 leading-normal">{videoError}</p>
                         <button
                           type="button"
-                          onClick={startCamera}
+                          onClick={() => {
+                            if (videoMode === "record") {
+                              startCamera();
+                            } else {
+                              setVideoError(null);
+                              setRecordingState("idle");
+                            }
+                          }}
                           className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer"
                         >
-                          Retry Access
+                          {videoMode === "record" ? "Retry Camera Access" : "Clear Error"}
                         </button>
                       </div>
                     )}
 
                     {/* Flipped mirrored livestream display */}
-                    {(recordingState === "idle" || recordingState === "recording") && mediaStream && !videoError && (
+                    {videoMode === "record" && (recordingState === "idle" || recordingState === "recording") && mediaStream && !videoError && (
                       <video
                         ref={videoPreviewRef}
                         autoPlay
@@ -597,7 +708,7 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                       />
                     )}
 
-                    {/* Pre-recorded segment preview player */}
+                    {/* Pre-recorded/Uploaded segment preview player */}
                     {recordingState === "recorded" && videoObjectURL && (
                       <video
                         src={videoObjectURL}
@@ -606,15 +717,52 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                       />
                     )}
 
+                    {/* Drag and Drop Upload Dropzone Selector */}
+                    {videoMode === "upload" && !videoObjectURL && !videoError && (
+                      <div 
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`absolute inset-0 flex flex-col items-center justify-center text-center p-6 transition-all gap-3 ${
+                          isDragging 
+                            ? "bg-slate-950 border-4 border-dashed border-indigo-500" 
+                            : "bg-slate-950 border border-slate-900"
+                        }`}
+                      >
+                        <div className="p-3 bg-slate-900 rounded-full border border-slate-800 text-indigo-400">
+                          <Upload className="w-7 h-7 animate-pulse text-indigo-400" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-black text-slate-100 tracking-tight uppercase">Drag & Drop testimonial video</h4>
+                          <p className="text-[10px] font-semibold text-slate-400 max-w-xs leading-normal">
+                            Drop any MP4, WebM or QuickTime file here or click below.
+                          </p>
+                        </div>
+                        <label className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-550 text-white text-[10px] font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-md active:scale-97">
+                          <span>Choose Video File</span>
+                          <input 
+                            type="file"
+                            accept="video/*"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files.length > 0) {
+                                handleFileUpload(e.target.files[0]);
+                              }
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    )}
+
                     {/* REC Banners Top Overlay */}
-                    {recordingState === "recording" && (
+                    {videoMode === "record" && recordingState === "recording" && (
                       <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-rose-600 px-3 py-1 rounded-full text-white text-[10px] font-black uppercase tracking-widest leading-none shadow shadow-rose-950">
                         <span className="h-2 w-2 rounded-full bg-white animate-ping" />
                         <span>Rec • {recordedDuration}s / 60s Limit</span>
                       </div>
                     )}
 
-                    {!videoObjectURL && recordingState === "idle" && (
+                    {videoMode === "record" && !videoObjectURL && recordingState === "idle" && (
                       <div className="absolute top-4 left-4 z-10 bg-slate-950/80 backdrop-blur-xs border border-slate-700/50 px-3 py-1 rounded-full text-slate-300 text-[9px] font-black uppercase tracking-wider">
                         📷 Guide: Center your camera before recording
                       </div>
@@ -622,7 +770,7 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
 
                     {/* Bottom Action Ribbons */}
                     <div className="absolute bottom-4 left-0 right-0 z-10 flex justify-center gap-3 px-4">
-                      {recordingState === "idle" && mediaStream && (
+                      {videoMode === "record" && recordingState === "idle" && mediaStream && (
                         <button
                           type="button"
                           onClick={startRecording}
@@ -633,7 +781,7 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                         </button>
                       )}
 
-                      {recordingState === "recording" && (
+                      {videoMode === "record" && recordingState === "recording" && (
                         <button
                           type="button"
                           onClick={stopRecording}
@@ -647,7 +795,7 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                       {recordingState === "recorded" && (
                         <div className="flex gap-2.5">
                           <span className="px-4 py-2.5 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl flex items-center">
-                            ✓ Saved ({recordedDuration}s)
+                            ✓ Video Attached ({recordedDuration}s)
                           </span>
                           <button
                             type="button"
@@ -655,7 +803,7 @@ export default function SaaS_Landing_Form({ slug, onGoHome }: SaaSStoreFormProps
                             className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-1.5"
                           >
                             <RotateCcw className="w-4 h-4 text-emerald-400" />
-                            <span>Re-record video</span>
+                            <span>{videoMode === "record" ? "Re-record video" : "Change Video File"}</span>
                           </button>
                         </div>
                       )}

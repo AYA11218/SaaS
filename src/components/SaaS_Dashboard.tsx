@@ -56,7 +56,8 @@ import {
   Instagram,
   RefreshCw,
   Edit3,
-  X
+  X,
+  Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import SaaS_Widget_Embed from "./SaaS_Widget_Embed";
@@ -320,6 +321,89 @@ export default function SaaS_Dashboard() {
     setTimeout(() => {
       setFeedbackToasts((prev) => prev.filter((t) => t.id !== id));
     }, 5005);
+  };
+
+  const handleDownloadCSV = (dataset: Testimonial[]) => {
+    if (!dataset || dataset.length === 0) {
+      showFeedback("Export Failed", "There are no testimonials available to export.", "error");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Campaign ID",
+      "Space ID",
+      "Name",
+      "Email",
+      "Company",
+      "Title",
+      "Rating",
+      "Content",
+      "Status",
+      "Sentiment",
+      "AI Summary",
+      "Tags",
+      "Video URL",
+      "Created At"
+    ];
+
+    const rows = dataset.map(t => {
+      const clean = (val: any) => {
+        if (val === null || val === undefined) return "";
+        let str = String(val);
+        str = str.replace(/"/g, '""');
+        if (str.includes(",") || str.includes("\n") || str.includes("\r") || str.includes('"')) {
+          return `"${str}"`;
+        }
+        return str;
+      };
+
+      const computedSentiment = t.sentiment || (t.rating >= 4 ? "Positive" : t.rating === 3 ? "Neutral" : "Negative");
+
+      return [
+        clean(t.id),
+        clean(t.campaignId),
+        clean(t.spaceId),
+        clean(t.name),
+        clean(t.email),
+        clean(t.company),
+        clean(t.title),
+        clean(t.rating),
+        clean(t.content),
+        clean(t.status),
+        clean(computedSentiment),
+        clean(t.aiSummary || ""),
+        clean(t.tags ? t.tags.join("; ") : ""),
+        clean(t.videoUrl || ""),
+        clean(t.createdAt)
+      ];
+    });
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\r\n");
+
+    try {
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `testimonials_export_${Date.now()}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showFeedback(
+        "CSV Export Completed", 
+        `Successfully downloaded ${dataset.length} reviews with associated sentiments and metadata.`, 
+        "success"
+      );
+    } catch (err: any) {
+      console.error(err);
+      showFeedback("Export Failed", err.message || "Could not generate CSV file download.", "error");
+    }
   };
 
   // Social Media Marketing Copywriter modal states
@@ -3971,8 +4055,34 @@ export default function SaaS_Dashboard() {
                   </div>
                   
                   {/* Results count label */}
-                  <div className="text-[10px] font-black text-slate-450 tracking-wider uppercase px-1">
-                    Showing {filteredTestimonials.length} of {testimonials.length} submitted reviews
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-1.5 pb-2">
+                    <div className="text-[10px] font-black text-slate-450 tracking-wider uppercase">
+                      Showing {filteredTestimonials.length} of {testimonials.length} submitted reviews
+                    </div>
+                    
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadCSV(testimonials)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all select-none cursor-pointer shadow-xs active:scale-98"
+                        title="Download all testimonials as CSV with sentiment classification"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-500 animate-pulse" />
+                        <span>Export All ({testimonials.length})</span>
+                      </button>
+
+                      {filteredTestimonials.length > 0 && filteredTestimonials.length < testimonials.length && (
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadCSV(filteredTestimonials)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all select-none cursor-pointer shadow-xs active:scale-98"
+                          title="Download only the currently filtered testimonials as CSV"
+                        >
+                          <Download className="w-3.5 h-3.5 text-indigo-550" />
+                          <span>Export Filtered ({filteredTestimonials.length})</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Reviews Stack list */}
