@@ -105,6 +105,10 @@ export function useTestimonialNotifications() {
     useEffect(() => {
       if (!spaceId) return;
 
+      // Reset tracking state when starting a subscription for a new space
+      isInitialRef.current = true;
+      resolvedIds.current.clear();
+
       const testimonialsRef = collection(db, "testimonials");
       const q = query(
         testimonialsRef,
@@ -127,6 +131,7 @@ export function useTestimonialNotifications() {
           }
 
           // Trigger notifications and log sent files for newly appended snapshot rows
+          let hasNew = false;
           snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
               const docId = change.doc.id;
@@ -135,6 +140,7 @@ export function useTestimonialNotifications() {
               if (!resolvedIds.current.has(docId)) {
                 resolvedIds.current.add(docId);
                 const data = change.doc.data();
+                hasNew = true;
                 
                 // Trigger callback for the custom toast notification UI
                 onNewSubmission({
@@ -150,6 +156,37 @@ export function useTestimonialNotifications() {
               }
             }
           });
+
+          if (hasNew) {
+            // Play a satisfying digital chime
+            try {
+              const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+              if (AudioCtx) {
+                const ctx = new AudioCtx();
+                const now = ctx.currentTime;
+                
+                const playTone = (freq: number, start: number, duration: number) => {
+                  const osc = ctx.createOscillator();
+                  const gain = ctx.createGain();
+                  osc.type = "sine";
+                  osc.frequency.setValueAtTime(freq, start);
+                  gain.gain.setValueAtTime(0.08, start);
+                  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+                  osc.connect(gain);
+                  gain.connect(ctx.destination);
+                  osc.start(start);
+                  osc.stop(start + duration);
+                };
+                
+                // C5 -> E5 -> G5 fast chime arpeggio
+                playTone(523.25, now, 0.3);
+                playTone(659.25, now + 0.08, 0.4);
+                playTone(783.99, now + 0.16, 0.5);
+              }
+            } catch (e) {
+              console.warn("Audio chime block:", e);
+            }
+          }
         },
         (error) => {
           console.error("[Notification System] Listener subscription error:", error);

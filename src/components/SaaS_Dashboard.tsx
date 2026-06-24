@@ -57,8 +57,10 @@ import {
   RefreshCw,
   Edit3,
   X,
-  Download
+  Download,
+  QrCode
 } from "lucide-react";
+import QRCode from "qrcode";
 import { motion, AnimatePresence } from "motion/react";
 import SaaS_Widget_Embed from "./SaaS_Widget_Embed";
 
@@ -323,6 +325,128 @@ export default function SaaS_Dashboard() {
     }, 5005);
   };
 
+  const handleDownloadQRCode = () => {
+    if (!qrCampaign || !qrImage) return;
+
+    // Create an offline canvas to construct a gorgeous custom image
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const qrImg = new Image();
+    qrImg.crossOrigin = "anonymous";
+    qrImg.src = qrImage;
+
+    qrImg.onload = () => {
+      if (qrDesign === "flyer") {
+        // High resolution sizing (e.g., 800 x 1100 px for gorgeous print)
+        canvas.width = 800;
+        canvas.height = 1100;
+
+        // 1. Draw rounded container background (White Card)
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. Draw colorful header gradient block at the top
+        const grad = ctx.createLinearGradient(0, 0, canvas.width, 180);
+        grad.addColorStop(0, "#10b981"); // Emerald
+        grad.addColorStop(0.5, "#6366f1"); // Indigo
+        grad.addColorStop(1, "#4f46e5"); // Dark Indigo
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, 180);
+
+        // 3. Draw Brand Label / Accent
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 26px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText((selectedSpace?.name || "CUSTOMER FEEDBACK").toUpperCase(), canvas.width / 2, 70);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+        ctx.font = "500 20px sans-serif";
+        ctx.fillText(qrCampaign.title.toUpperCase(), canvas.width / 2, 115);
+
+        // 4. Headline text
+        ctx.fillStyle = "#0f172a"; // Slate 900
+        ctx.font = "bold 34px sans-serif";
+        ctx.textAlign = "center";
+        
+        // Wrap heading text to fit nicely
+        const headingText = qrCampaign.heading || "Share Your Feedback!";
+        const words = headingText.split(" ");
+        let line = "";
+        let y = 260;
+        const maxWidth = 700;
+        const lineHeight = 46;
+
+        for (let n = 0; n < words.length; n++) {
+          let testLine = line + words[n] + " ";
+          let metrics = ctx.measureText(testLine);
+          let testWidth = metrics.width;
+          if (testWidth > maxWidth && n > 0) {
+            ctx.fillText(line, canvas.width / 2, y);
+            line = words[n] + " ";
+            y += lineHeight;
+          } else {
+            line = testLine;
+          }
+        }
+        ctx.fillText(line, canvas.width / 2, y);
+
+        // 5. Draw QR code image
+        const qrSizeOnCanvas = 440;
+        const qrX = (canvas.width - qrSizeOnCanvas) / 2;
+        const qrY = y + 60;
+        
+        // Background for QR code
+        ctx.fillStyle = qrBgColor;
+        ctx.fillRect(qrX - 20, qrY - 20, qrSizeOnCanvas + 40, qrSizeOnCanvas + 40);
+        // Draw shadow/border for QR area
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(qrX - 20, qrY - 20, qrSizeOnCanvas + 40, qrSizeOnCanvas + 40);
+
+        // Draw QR Code
+        ctx.drawImage(qrImg, qrX, qrY, qrSizeOnCanvas, qrSizeOnCanvas);
+
+        // 6. Draw scan helper label text
+        ctx.fillStyle = "#334155"; // Slate 700
+        ctx.font = "bold 28px sans-serif";
+        ctx.fillText(qrLabel || "Scan to share your review!", canvas.width / 2, qrY + qrSizeOnCanvas + 70);
+
+        // 7. Direct printable URL
+        const urlString = `${window.location.origin.replace(/^https?:\/\//, "")}/form/${qrCampaign.slug}`;
+        ctx.fillStyle = "#64748b"; // Slate 500
+        ctx.font = "bold 18px monospace";
+        ctx.fillText(urlString, canvas.width / 2, qrY + qrSizeOnCanvas + 115);
+
+        // Footer Brand tag
+        ctx.fillStyle = "#94a3b8"; // Slate 400
+        ctx.font = "600 14px sans-serif";
+        ctx.fillText("POWERED BY SAAS TESTIMONIAL SUITE", canvas.width / 2, canvas.height - 30);
+
+      } else {
+        // Standard Download - just the QR Code at high quality
+        canvas.width = qrSize;
+        canvas.height = qrSize;
+        ctx.drawImage(qrImg, 0, 0, qrSize, qrSize);
+      }
+
+      // Trigger download
+      try {
+        const link = document.createElement("a");
+        link.download = `qr_collection_${qrCampaign.slug}_${Date.now()}.png`;
+        link.href = canvas.toDataURL("image/png");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showFeedback("QR Code Downloaded", "Ready for physical placement or prints!", "success");
+      } catch (err: any) {
+        console.error(err);
+        showFeedback("Download Failed", "Failed to compile the custom printable canvas image.", "error");
+      }
+    };
+  };
+
   const handleDownloadCSV = (dataset: Testimonial[]) => {
     if (!dataset || dataset.length === 0) {
       showFeedback("Export Failed", "There are no testimonials available to export.", "error");
@@ -434,6 +558,39 @@ export default function SaaS_Dashboard() {
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [configuringEmailCampaign, setConfiguringEmailCampaign] = useState<Campaign | null>(null);
   const [configuringDomainCampaign, setConfiguringDomainCampaign] = useState<Campaign | null>(null);
+  
+  // QR Code generator state variables
+  const [qrCampaign, setQrCampaign] = useState<Campaign | null>(null);
+  const [qrFgColor, setQrFgColor] = useState("#0f172a");
+  const [qrBgColor, setQrBgColor] = useState("#ffffff");
+  const [qrSize, setQrSize] = useState(400);
+  const [qrLabel, setQrLabel] = useState("Scan to share your review!");
+  const [qrDesign, setQrDesign] = useState<"standard" | "flyer">("flyer");
+  const [qrImage, setQrImage] = useState("");
+
+  // Dynamically generate QR code
+  useEffect(() => {
+    if (!qrCampaign) {
+      setQrImage("");
+      return;
+    }
+    const url = `${window.location.origin}/form/${qrCampaign.slug}`;
+    QRCode.toDataURL(url, {
+      width: qrSize,
+      margin: 2,
+      color: {
+        dark: qrFgColor,
+        light: qrBgColor
+      }
+    })
+    .then(dataUrl => {
+      setQrImage(dataUrl);
+    })
+    .catch(err => {
+      console.error("QR Code generation error:", err);
+      setQrImage("");
+    });
+  }, [qrCampaign, qrFgColor, qrBgColor, qrSize]);
   const [tempCustomDomain, setTempCustomDomain] = useState("");
   const [isVerifyingDomain, setIsVerifyingDomain] = useState(false);
   const [domainVerificationError, setDomainVerificationError] = useState("");
@@ -2595,6 +2752,19 @@ export default function SaaS_Dashboard() {
 
                           <button
                             onClick={() => {
+                              setQrCampaign(c);
+                              setQrLabel("Scan to share your review!");
+                              setQrFgColor("#0f172a");
+                              setQrBgColor("#ffffff");
+                              setQrDesign("flyer");
+                            }}
+                            className="w-full inline-flex items-center justify-center gap-2 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200/50 text-amber-800 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
+                          >
+                            <QrCode className="w-4 h-4 text-amber-600 animate-pulse" /> Generate QR Code Flyer
+                          </button>
+
+                          <button
+                            onClick={() => {
                               setShareCampaign(c);
                               setRecipientName("Jane");
                               setShareTone("friendly");
@@ -3720,6 +3890,296 @@ export default function SaaS_Dashboard() {
                         </button>
                       </div>
                     </div>
+                  </motion.div>
+                </div>
+              )}
+
+              {qrCampaign && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]"
+                  >
+                    <div className="h-2 bg-gradient-to-r from-amber-400 via-emerald-500 to-indigo-600 shrink-0" />
+                    
+                    {/* Header */}
+                    <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
+                      <div>
+                        <h3 className="text-lg font-black text-slate-950 tracking-tight flex items-center gap-2">
+                          <QrCode className="w-5 h-5 text-amber-500 animate-pulse" /> Campaign QR Code Creator
+                        </h3>
+                        <p className="text-xs text-slate-405 font-bold mt-0.5">
+                          Create and customize physical assets and flyers to share with buyers at retail stores, offices, or receipts.
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setQrCampaign(null)}
+                        className="p-1 px-3 py-1.5 text-slate-400 hover:text-slate-900 font-extrabold border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-8 bg-slate-50/50">
+                      
+                      {/* Left: Customizer Panel (Col span 5) */}
+                      <div className="md:col-span-5 space-y-6">
+                        
+                        {/* Selector Design */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Flyer Asset Template</span>
+                          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQrDesign("flyer");
+                                setQrBgColor("#ffffff");
+                              }}
+                              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                qrDesign === "flyer"
+                                  ? "bg-white text-slate-900 shadow-xs border border-slate-100"
+                                  : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              Printable Flyer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setQrDesign("standard")}
+                              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                qrDesign === "standard"
+                                  ? "bg-white text-slate-900 shadow-xs border border-slate-100"
+                                  : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              Standard QR Only
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Colors customization */}
+                        <div className="space-y-3.5">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">QR Code Foreground Color</span>
+                          <div className="flex flex-wrap gap-2">
+                            {["#0f172a", "#4f46e5", "#059669", "#e11d48", "#7c3aed"].map(col => (
+                              <button
+                                key={col}
+                                type="button"
+                                onClick={() => setQrFgColor(col)}
+                                style={{ backgroundColor: col }}
+                                className={`w-8 h-8 rounded-full border-2 transition-all cursor-pointer relative ${
+                                  qrFgColor === col ? "border-slate-800 scale-110 shadow-md" : "border-transparent hover:scale-105"
+                                }`}
+                              >
+                                {qrFgColor === col && (
+                                  <span className="absolute inset-0 flex items-center justify-center text-white text-xs font-black">✓</span>
+                                )}
+                              </button>
+                            ))}
+                            <input 
+                              type="color" 
+                              value={qrFgColor} 
+                              onChange={(e) => setQrFgColor(e.target.value)}
+                              className="w-8 h-8 rounded-full cursor-pointer border border-slate-200 outline-none"
+                              title="Custom Foreground Hex"
+                            />
+                          </div>
+                        </div>
+
+                        {qrDesign === "standard" && (
+                          <div className="space-y-3.5">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">QR Code Background Color</span>
+                            <div className="flex flex-wrap gap-2">
+                              {["#ffffff", "#f8fafc", "#f5f3ff", "#f0fdf4"].map(col => (
+                                <button
+                                  key={col}
+                                  type="button"
+                                  onClick={() => setQrBgColor(col)}
+                                  style={{ backgroundColor: col }}
+                                  className={`w-8 h-8 rounded-full border border-slate-200 transition-all cursor-pointer relative ${
+                                    qrBgColor === col ? "ring-2 ring-indigo-500 scale-110 shadow-md" : "hover:scale-105"
+                                  }`}
+                                >
+                                  {qrBgColor === col && (
+                                    <span className="absolute inset-0 flex items-center justify-center text-slate-700 text-xs font-black">✓</span>
+                                  )}
+                                </button>
+                              ))}
+                              <input 
+                                type="color" 
+                                value={qrBgColor} 
+                                onChange={(e) => setQrBgColor(e.target.value)}
+                                className="w-8 h-8 rounded-full cursor-pointer border border-slate-200 outline-none"
+                                title="Custom Background Hex"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Text customization for Flyer */}
+                        {qrDesign === "flyer" && (
+                          <div className="space-y-4">
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Flyer Heading</span>
+                              <input 
+                                type="text"
+                                value={qrCampaign.heading || "Share Your Feedback!"}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setQrCampaign(prev => prev ? { ...prev, heading: val } : null);
+                                }}
+                                className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-xs outline-none focus:ring-2 focus:ring-amber-100"
+                                placeholder="e.g., Love our service? Leave us a review!"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Bottom Scan Phrase</span>
+                              <input 
+                                type="text"
+                                value={qrLabel}
+                                onChange={(e) => setQrLabel(e.target.value)}
+                                className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-xs outline-none focus:ring-2 focus:ring-amber-100"
+                                placeholder="e.g., Scan with phone camera to review"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Download Resolution Selector */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Download Image Sizing</span>
+                          <select
+                            value={qrSize}
+                            onChange={(e) => setQrSize(Number(e.target.value))}
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-xs outline-none cursor-pointer text-slate-700"
+                          >
+                            <option value={200}>Standard Digital (200px)</option>
+                            <option value={400}>Medium Web Asset (400px)</option>
+                            <option value={800}>High Resolution Print (800px)</option>
+                            <option value={1200}>Pro Poster Quality (1200px)</option>
+                          </select>
+                        </div>
+
+                      </div>
+
+                      {/* Right: Live Graphic Preview (Col span 7) */}
+                      <div className="md:col-span-7 flex flex-col items-center justify-center">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-3">Live Printable Asset Preview</span>
+                        
+                        {qrDesign === "flyer" ? (
+                          /* Printable Flyer Mock Preview */
+                          <div className="w-[300px] h-[412px] bg-white rounded-3xl shadow-xl border border-slate-200/80 overflow-hidden flex flex-col justify-between select-none relative p-4 pb-6">
+                            
+                            {/* Decorative top ribbon */}
+                            <div className="absolute top-0 left-0 right-0 h-[60px] bg-gradient-to-r from-emerald-500 via-indigo-500 to-indigo-600 flex flex-col items-center justify-center px-4 text-center text-white">
+                              <span className="text-[9px] font-bold tracking-widest uppercase opacity-90">{(selectedSpace?.name || "CUSTOMER FEEDBACK").toUpperCase()}</span>
+                              <span className="text-[7.5px] font-medium tracking-wide uppercase opacity-75 line-clamp-1">{qrCampaign.title}</span>
+                            </div>
+
+                            {/* Campaign Heading */}
+                            <div className="mt-[56px] text-center px-2">
+                              <h4 className="text-[11.5px] font-black text-slate-900 tracking-tight leading-snug line-clamp-2">
+                                {qrCampaign.heading || "Share Your Feedback!"}
+                              </h4>
+                            </div>
+
+                            {/* Centered QR code container */}
+                            <div className="flex flex-col items-center justify-center my-2">
+                              <div className="p-3 bg-white border-2 border-slate-100 rounded-2xl shadow-sm relative" style={{ backgroundColor: qrBgColor }}>
+                                {qrImage ? (
+                                  <img 
+                                    src={qrImage} 
+                                    alt="QR Code Preview" 
+                                    className="w-32 h-32 object-contain"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="w-32 h-32 bg-slate-100 rounded-xl flex items-center justify-center text-[10px] text-slate-400 font-bold animate-pulse">
+                                    Compiling QR...
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Bottom Labeling & instructions */}
+                            <div className="text-center px-4 space-y-1">
+                              <span className="text-[9px] font-black text-slate-700 block tracking-tight line-clamp-1">{qrLabel}</span>
+                              <span className="text-[6.5px] font-extrabold text-slate-450 font-mono block tracking-wider break-all select-all">
+                                {window.location.origin.replace(/^https?:\/\//, "")}/form/{qrCampaign.slug}
+                              </span>
+                            </div>
+
+                            <div className="text-[5.5px] font-black tracking-widest text-slate-300 text-center uppercase mt-2 border-t border-slate-50 pt-1.5 shrink-0 font-sans">
+                              POWERED BY SAAS TESTIMONIAL SUITE
+                            </div>
+
+                          </div>
+                        ) : (
+                          /* Standard QR Mock Preview */
+                          <div className="p-8 rounded-3xl shadow-lg border border-slate-200/80 max-w-sm w-full flex flex-col items-center justify-center transition-all duration-300" style={{ backgroundColor: qrBgColor }}>
+                            <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                              {qrImage ? (
+                                <img 
+                                  src={qrImage} 
+                                  alt="Standard QR Preview" 
+                                  className="w-44 h-44 object-contain"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-44 h-44 bg-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400 font-semibold animate-pulse">
+                                  Compiling QR...
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-[9.5px] font-mono text-slate-400 mt-4 font-bold tracking-tight bg-white px-3 py-1 rounded-lg border border-slate-200/60 max-w-full break-all text-center">
+                              {window.location.origin.replace(/^https?:\/\//, "")}/form/{qrCampaign.slug}
+                            </span>
+                          </div>
+                        )}
+
+                      </div>
+
+                    </div>
+
+                    {/* Bottom Action Ribbon */}
+                    <div className="p-6 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row gap-3 sm:justify-between items-center shrink-0">
+                      <span className="text-[10px] text-slate-400 font-bold max-w-sm leading-normal text-center sm:text-left font-sans">
+                        💡 Download these images to print directly onto sales receipts, desktop display holders, brochures, or stickers!
+                      </span>
+                      <div className="flex gap-2.5 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!qrImage) return;
+                            fetch(qrImage)
+                              .then(res => res.blob())
+                              .then(blob => {
+                                navigator.clipboard.write([
+                                  new ClipboardItem({ [blob.type]: blob })
+                                ]);
+                                showFeedback("Copied to Clipboard", "The QR Code image has been copied to your clipboard!", "success");
+                              })
+                              .catch(err => {
+                                console.error(err);
+                                showFeedback("Copy Failed", "Browser clipboard permissions blocked copying images directly.", "warning");
+                              });
+                          }}
+                          className="flex-1 sm:flex-none px-5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-98"
+                        >
+                          Copy QR Code
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadQRCode}
+                          className="flex-2 sm:flex-none px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md shadow-amber-650/15 transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="w-4 h-4" /> Download PNG
+                        </button>
+                      </div>
+                    </div>
+
                   </motion.div>
                 </div>
               )}

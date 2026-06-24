@@ -15,7 +15,8 @@ import {
   Award,
   BookOpen,
   CheckCircle2,
-  ThumbsUp
+  ThumbsUp,
+  Download
 } from "lucide-react";
 import { 
   ResponsiveContainer, 
@@ -119,6 +120,72 @@ export const SaaS_Sentiment_Dashboard: React.FC<SaaS_Sentiment_DashboardProps> =
       setAnalysisError(err.message || "An unresolved error occurred analyzing feedback sentiments.");
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleDownloadSentimentCSV = () => {
+    if (!testimonials || testimonials.length === 0) return;
+
+    const headers = [
+      "Testimonial ID",
+      "Client Name",
+      "Client Email",
+      "Company",
+      "Rating",
+      "Content/Review text",
+      "Computed Sentiment Label",
+      "Gemini Sentiment Score (-1 to +1)",
+      "Gemini Analysis Reason",
+      "Created At"
+    ];
+
+    const rows = testimonials.map(t => {
+      const analysis = analysisResults[t.id];
+      const sentimentScore = analysis ? analysis.score : (t.rating >= 4 ? 0.75 : t.rating === 3 ? 0.1 : -0.5);
+      const sentimentLabel = analysis ? analysis.sentiment : (t.rating >= 4 ? "Positive" : t.rating === 3 ? "Neutral" : "Negative");
+      const sentimentReason = analysis ? analysis.reason : "Default calculated baseline rating";
+
+      const clean = (val: any) => {
+        if (val === null || val === undefined) return "";
+        let str = String(val);
+        str = str.replace(/"/g, '""');
+        if (str.includes(",") || str.includes("\n") || str.includes("\r") || str.includes('"')) {
+          return `"${str}"`;
+        }
+        return str;
+      };
+
+      return [
+        clean(t.id),
+        clean(t.name),
+        clean(t.email),
+        clean(t.company),
+        clean(t.rating),
+        clean(t.content),
+        clean(sentimentLabel),
+        clean(sentimentScore),
+        clean(sentimentReason),
+        clean(t.createdAt)
+      ];
+    });
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\r\n");
+
+    try {
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `customer_sentiment_report_${Date.now()}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to generate CSV export:", err);
     }
   };
 
@@ -338,21 +405,31 @@ export const SaaS_Sentiment_Dashboard: React.FC<SaaS_Sentiment_DashboardProps> =
           </p>
         </div>
 
-        <button
-          onClick={() => triggerSentimentAnalysis(true)}
-          disabled={analyzing}
-          className="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 rounded-xl text-xs font-bold leading-none outline-none border border-slate-200/50 cursor-pointer disabled:opacity-50 select-none transition-all hover:scale-101 active:scale-99 shadow-xs"
-        >
-          {analyzing ? (
-            <>
-              <Loader className="w-3.5 h-3.5 animate-spin text-indigo-650" /> Evaluating...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" /> Deep Re-Analyze Sentiment
-            </>
-          )}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleDownloadSentimentCSV}
+            className="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/50 text-indigo-750 hover:text-indigo-900 rounded-xl text-xs font-bold leading-none outline-none cursor-pointer select-none transition-all hover:scale-101 active:scale-99 shadow-xs"
+            title="Download full sentiment analysis report as CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-650" /> Export CSV Report
+          </button>
+
+          <button
+            onClick={() => triggerSentimentAnalysis(true)}
+            disabled={analyzing}
+            className="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 rounded-xl text-xs font-bold leading-none outline-none border border-slate-200/50 cursor-pointer disabled:opacity-50 select-none transition-all hover:scale-101 active:scale-99 shadow-xs"
+          >
+            {analyzing ? (
+              <>
+                <Loader className="w-3.5 h-3.5 animate-spin text-indigo-650" /> Evaluating...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 text-slate-500" /> Deep Re-Analyze Sentiment
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {analysisError && (
